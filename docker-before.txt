@@ -1,0 +1,172 @@
+version: '3.8'
+
+services:
+  gateway:
+    build:
+      context: .
+      dockerfile: ./docker/gateway/Dockerfile
+    container_name: reward-system-gateway
+    restart: always
+    ports:
+      - '3000:3000'
+    environment:
+      - NODE_ENV=development
+      - PORT=3000
+      - AUTH_HOST=auth # Use container name
+      - AUTH_PORT=3001
+      - EVENT_HOST=event # Use container name
+      - EVENT_PORT=3002
+      - JWT_SECRET=verysecretkey123!nexon
+      - JWT_EXPIRATION=1d
+    depends_on:
+      - auth
+      - event
+    networks:
+      - reward-network
+
+  auth:
+    build:
+      context: .
+      dockerfile: ./docker/auth/Dockerfile
+    container_name: reward-system-auth
+    restart: always
+    ports:
+      - '3001:3001'
+    environment:
+      - NODE_ENV=development
+      - PORT=3001
+      - MONGODB_URI=mongodb://root:root123@mongodb:27017/reward-system?authSource=admin # Use mongodb container name
+      - JWT_SECRET=verysecretkey123!nexon
+      - JWT_EXPIRATION=1d
+    depends_on:
+      - mongodb
+    networks:
+      - reward-network
+
+  event:
+    build:
+      context: .
+      dockerfile: ./docker/event/Dockerfile
+    container_name: reward-system-event
+    restart: always
+    ports:
+      - '3002:3002'
+    environment:
+      - NODE_ENV=development
+      - PORT=3002
+      - MONGODB_URI=mongodb://root:root123@mongodb:27017/reward-system?authSource=admin # Use mongodb container name
+      - INNGEST_DEV=true
+      - INNGEST_SIGNING_KEY=dev_inngest_signing_key
+    depends_on:
+      - mongodb
+    networks:
+      - reward-network
+
+  mongodb:
+    image: mongo:5.0
+    container_name: reward-system-mongodb
+    restart: always
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=root
+      - MONGO_INITDB_ROOT_PASSWORD=root123
+      - MONGO_INITDB_DATABASE=reward-system
+    ports:
+      - '27017:27017'
+    volumes:
+      - mongodb_data:/data/db
+      - ./docker/mongodb/init-mongo.js:/docker-entrypoint-initdb.d/init-mongo.js:ro
+    networks:
+      - reward-network
+
+networks:
+  reward-network:
+    driver: bridge
+
+volumes:
+  mongodb_data:
+# version: '3.8'
+
+# services:
+#   gateway:
+#     build:
+#       context: .
+#       dockerfile: ./docker/gateway/Dockerfile
+#     container_name: reward-system-gateway
+#     restart: always
+#     ports:
+#       - '3000:3000'
+#     environment:
+#       - NODE_ENV=development
+#       - PORT=3000
+#       - AUTH_HOST=auth
+#       - AUTH_PORT=3001
+#       - EVENT_HOST=event
+#       - EVENT_PORT=3002
+#       - JWT_SECRET=verysecretkey123!nexon
+#       - JWT_EXPIRATION=1d
+#     depends_on:
+#       - auth
+#       - event
+#     networks:
+#       - reward-network
+
+#   auth:
+#     build:
+#       context: .
+#       dockerfile: ./docker/auth/Dockerfile
+#     container_name: reward-system-auth
+#     restart: always
+#     ports:
+#       - '3001:3001'
+#     environment:
+#       - NODE_ENV=development
+#       - PORT=3001
+#       - MONGODB_URI=mongodb://root:root123@mongodb:27017/reward-system?authSource=admin
+#       - JWT_SECRET=verysecretkey123!nexon
+#       - JWT_EXPIRATION=1d
+#     depends_on:
+#       - mongodb
+#     networks:
+#       - reward-network
+
+#   event:
+#     build:
+#       context: .
+#       dockerfile: ./docker/event/Dockerfile
+#     container_name: reward-system-event
+#     restart: always
+#     ports:
+#       - '3002:3002'
+#     environment:
+#       - NODE_ENV=development
+#       - PORT=3002
+#       - MONGODB_URI=mongodb://root:root123@mongodb:27017/reward-system?authSource=admin
+#       - INNGEST_DEV=true
+#       - INNGEST_SIGNING_KEY=dev_inngest_signing_key
+#     depends_on:
+#       - mongodb
+#     networks:
+#       - reward-network
+
+#   mongodb:
+#     image: mongo:5.0
+#     container_name: reward-system-mongodb
+#     restart: always
+#     environment:
+#       - MONGO_INITDB_ROOT_USERNAME=root
+#       - MONGO_INITDB_ROOT_PASSWORD=root123
+#       - MONGO_INITDB_DATABASE=reward-system
+#     ports:
+#       - '27017:27017'
+#     volumes:
+#       - mongodb_data:/data/db
+#       - ./docker/mongodb/init-mongo.js:/docker-entrypoint-initdb.d/init-mongo.js:ro
+#     networks:
+#       - reward-network
+
+# networks:
+#   reward-network:
+#     driver: bridge
+
+# volumes:
+#   mongodb_data:

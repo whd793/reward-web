@@ -1,0 +1,200 @@
+nexon-reward-system/
+├── .github/                                # GitHub configuration
+│   ├── ISSUE_TEMPLATE/                     # Issue templates
+│   │   ├── bug_report.md
+│   │   ├── feature_request.md
+│   │   └── question.md
+│   └── workflows/                          # CI/CD workflows
+│       ├── ci.yml                          # CI pipeline
+│       └── release.yml                     # Release automation
+├── apps/                                   # NestJS microservices applications
+│   ├── auth/                               # Auth microservice
+│   │   ├── src/
+│   │   │   ├── app.module.ts               # Auth app module
+│   │   │   ├── auth/                       # Auth module components
+│   │   │   │   ├── auth.controller.ts      # Auth controller
+│   │   │   │   ├── auth.module.ts          # Auth module
+│   │   │   │   ├── auth.service.spec.ts    # Auth service tests
+│   │   │   │   ├── auth.service.ts         # Auth service
+│   │   │   │   ├── decorators/             # Custom decorators
+│   │   │   │   │   ├── public.decorator.ts # Public route decorator
+│   │   │   │   │   └── roles.decorator.ts  # Role decorator
+│   │   │   │   ├── guards/                 # Auth guards
+│   │   │   │   │   ├── jwt-auth.guard.ts   # JWT guard
+│   │   │   │   │   ├── local-auth.guard.ts # Local auth guard
+│   │   │   │   │   └── roles.guard.ts      # Roles guard
+│   │   │   │   └── strategies/             # Passport strategies
+│   │   │   │       ├── jwt.strategy.ts     # JWT strategy
+│   │   │   │       └── local.strategy.ts   # Local strategy
+│   │   │   ├── config/                     # Configuration
+│   │   │   │   ├── configuration.ts        # Environment config
+│   │   │   │   └── validation.schema.ts    # Config validation
+│   │   │   ├── dto/                        # Data transfer objects
+│   │   │   │   ├── create-user.dto.ts      # User creation DTO
+│   │   │   │   └── login-user.dto.ts       # User login DTO
+│   │   │   ├── main.ts                     # Auth service entry point
+│   │   │   ├── schemas/                    # MongoDB schemas
+│   │   │   │   └── user.schema.ts          # User schema
+│   │   │   └── users/                      # Users module
+│   │   │       ├── users.controller.ts     # Users controller
+│   │   │       ├── users.module.ts         # Users module
+│   │   │       ├── users.service.spec.ts   # Users service tests
+│   │   │       └── users.service.ts        # Users service
+│   │   ├── test/                           # e2e tests
+│   │   │   └── app.e2e-spec.ts             # Auth e2e tests
+│   │   ├── tsconfig.app.json               # TypeScript config for app
+│   │   └── tsconfig.json                   # TypeScript config
+│   ├── event/                              # Event microservice
+│   │   ├── src/
+│   │   │   ├── app.module.ts               # Event app module
+│   │   │   ├── config/                     # Configuration
+│   │   │   │   ├── configuration.ts        # Environment config
+│   │   │   │   └── validation.schema.ts    # Config validation
+│   │   │   ├── dto/                        # Data transfer objects
+│   │   │   │   ├── claim-reward.dto.ts     # Claim reward DTO
+│   │   │   │   ├── create-event.dto.ts     # Event creation DTO
+│   │   │   │   ├── create-reward.dto.ts    # Reward creation DTO
+│   │   │   │   ├── request-reward.dto.ts   # Reward request DTO
+│   │   │   │   └── update-request-status.dto.ts  # Status update DTO
+│   │   │   ├── event-logger/               # Event logger module
+│   │   │   │   ├── event-logger.module.ts  # Logger module
+│   │   │   │   └── event-logger.service.ts # Logger service
+│   │   │   ├── events/                     # Events module
+│   │   │   │   ├── events.controller.ts    # Events controller
+│   │   │   │   ├── events.module.ts        # Events module
+│   │   │   │   ├── events.service.spec.ts  # Events service tests
+│   │   │   │   └── events.service.ts       # Events service
+│   │   │   ├── inngest/                    # Inngest integration
+│   │   │   │   ├── functions/              # Inngest functions
+│   │   │   │   │   ├── event-processor.function.ts  # Event processor function
+│   │   │   │   │   └── reward-processor.function.ts # Reward processor function
+│   │   │   │   ├── inngest.client.ts       # Inngest client
+│   │   │   │   └── inngest.module.ts       # Inngest module
+│   │   │   ├── main.ts                     # Event service entry point
+│   │   │   ├── processors/                 # Event processors
+│   │   │   │   ├── daily-login.processor.ts       # Daily login processor
+│   │   │   │   ├── event-processor.base.ts        # Base processor
+│   │   │   │   ├── event-processor.factory.ts     # Processor factory
+│   │   │   │   ├── event-processor.interface.ts   # Processor interface
+│   │   │   │   ├── invite-friends.processor.ts    # Friend invite processor
+│   │   │   │   ├── level-up.processor.ts          # Level up processor
+│   │   │   │   ├── processors.module.ts           # Processors module
+│   │   │   │   ├── profile-complete.processor.ts  # Profile complete processor
+│   │   │   │   └── quest-complete.processor.ts    # Quest complete processor
+│   │   │   ├── rewards/                    # Rewards module
+│   │   │   │   ├── rewards.controller.ts   # Rewards controller
+│   │   │   │   ├── rewards.module.ts       # Rewards module
+│   │   │   │   ├── rewards.service.spec.ts # Rewards service tests
+│   │   │   │   └── rewards.service.ts      # Rewards service
+│   │   │   ├── schemas/                    # MongoDB schemas
+│   │   │   │   ├── event-logger.schema.ts  # Event log schema
+│   │   │   │   ├── event.schema.ts         # Event schema
+│   │   │   │   ├── reward-request.schema.ts# Reward request schema
+│   │   │   │   └── reward.schema.ts        # Reward schema
+│   │   │   └── decorators/                 # Custom decorators
+│   │   │       └── roles.decorator.ts      # Role decorator
+│   │   ├── test/                           # e2e tests
+│   │   │   └── app.e2e-spec.ts             # Event e2e tests
+│   │   ├── tsconfig.app.json               # TypeScript config for app
+│   │   └── tsconfig.json                   # TypeScript config
+│   └── gateway/                            # Gateway microservice
+│       ├── src/
+│       │   ├── app.module.ts               # Gateway app module
+│       │   ├── auth/                       # Auth routing
+│       │   │   ├── auth.controller.ts      # Auth controller
+│       │   │   ├── auth.module.ts          # Auth module
+│       │   │   └── dto/                    # Data transfer objects
+│       │   │       ├── create-user.dto.ts  # User creation DTO
+│       │   │       └── login-user.dto.ts   # User login DTO
+│       │   ├── config/                     # Configuration
+│       │   │   ├── configuration.ts        # Environment config
+│       │   │   └── validation.schema.ts    # Config validation
+│       │   ├── decorators/                 # Custom decorators
+│       │   │   ├── public.decorator.ts     # Public route decorator
+│       │   │   └── roles.decorator.ts      # Role decorator
+│       │   ├── event/                      # Event routing
+│       │   │   ├── event.controller.ts     # Event controller
+│       │   │   └── event.module.ts         # Event module
+│       │   ├── guards/                     # Auth guards
+│       │   │   ├── jwt-auth.guard.ts       # JWT guard
+│       │   │   └── roles.guard.ts          # Roles guard
+│       │   ├── main.ts                     # Gateway entry point
+│       │   └── middlewares/                # Middlewares
+│       │       └── logger.middleware.ts    # Logger middleware
+│       ├── test/                           # e2e tests
+│       │   └── app.e2e-spec.ts             # Gateway e2e tests
+│       ├── tsconfig.app.json               # TypeScript config for app
+│       └── tsconfig.json                   # TypeScript config
+├── docker/                                 # Docker configurations
+│   ├── auth/                               # Auth service Docker
+│   │   └── Dockerfile                      # Auth Dockerfile
+│   ├── event/                              # Event service Docker
+│   │   └── Dockerfile                      # Event Dockerfile
+│   ├── gateway/                            # Gateway service Docker
+│   │   └── Dockerfile                      # Gateway Dockerfile
+│   └── mongodb/                            # MongoDB configs
+│       ├── init-mongo.js                   # MongoDB init script
+│       └── mongo-init.sh                   # MongoDB init shell script
+├── docs/                                   # Documentation
+│   ├── API.md                              # API documentation
+│   ├── CODE_OF_CONDUCT.md                  # Code of conduct
+│   ├── CONTRIBUTING.md                     # Contribution guide
+│   ├── architecture.md                     # Architecture details
+│   ├── database-schema.md                  # Database schema
+│   ├── event-types.md                      # Event types documentation
+│   └── reward-types.md                     # Reward types documentation
+├── libs/                                   # Shared libraries
+│   ├── common/                             # Common library
+│   │   ├── src/
+│   │   │   ├── common.module.ts            # Common module
+│   │   │   ├── constants/                  # Shared constants
+│   │   │   │   └── roles.constant.ts       # Role constants
+│   │   │   ├── dto/                        # Data transfer objects
+│   │   │   │   └── pagination.dto.ts       # Pagination DTO
+│   │   │   ├── enums/                      # Shared enumerations
+│   │   │   │   ├── event-types.enum.ts     # Event types enum
+│   │   │   │   └── reward-types.enum.ts    # Reward types enum
+│   │   │   ├── filters/                    # Exception filters
+│   │   │   │   └── http-exception.filter.ts# HTTP exception filter
+│   │   │   ├── index.ts                    # Common library exports
+│   │   │   ├── interfaces/                 # Shared interfaces
+│   │   │   │   ├── condition.interface.ts  # Event condition interfaces
+│   │   │   │   ├── event-data.interface.ts # Event data interfaces
+│   │   │   │   └── user.interface.ts       # User interface
+│   │   │   ├── middlewares/                # Shared middlewares
+│   │   │   │   └── logger.middleware.ts    # Logger middleware
+│   │   │   └── utils/                      # Utility functions
+│   │   │       ├── idempotency.util.ts     # Idempotency utilities
+│   │   │       └── transaction.util.ts     # Transaction utilities
+│   │   ├── tsconfig.json                   # TypeScript config
+│   │   └── tsconfig.lib.json               # Library TypeScript config
+│   └── testing/                            # Testing library
+│       ├── src/
+│       │   ├── index.ts                    # Testing library exports
+│       │   ├── mocks/                      # Test mocks
+│       │   │   ├── auth.mock.ts            # Auth mocks
+│       │   │   ├── event.mock.ts           # Event mocks
+│       │   │   └── reward.mock.ts          # Reward mocks
+│       │   └── testing.module.ts           # Testing module
+│       ├── tsconfig.json                   # TypeScript config
+│       └── tsconfig.lib.json               # Library TypeScript config
+├── scripts/                                # Utility scripts
+│   ├── postman-collection.json             # Postman collection
+│   ├── seed-db.js                          # Database seeding script
+│   └── test-api.sh                         # API test script
+├── .dockerignore                           # Docker ignore file
+├── .env                                    # Environment variables
+├── .env.development                        # Development env variables
+├── .env.test                               # Test env variables
+├── .eslintrc.js                            # ESLint configuration
+├── .gitignore                              # Git ignore file
+├── .prettierrc                             # Prettier configuration
+├── CODE_STYLE.md                           # Code style guide
+├── CONTRIBUTING.md                         # Contribution guide
+├── docker-compose.yml                      # Docker Compose config
+├── nest-cli.json                           # NestJS CLI config
+├── package-lock.json                       # Package lock file
+├── package.json                            # NPM package file
+├── README.md                               # Project README
+├── tsconfig.build.json                     # Build TypeScript config
+└── tsconfig.json                           # Base TypeScript config
