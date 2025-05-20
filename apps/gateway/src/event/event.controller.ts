@@ -2,207 +2,831 @@ import {
   Controller,
   Get,
   Post,
-  Put,
-  Delete,
   Body,
   Param,
   Query,
+  Patch,
+  Logger,
   Inject,
-  // UseGuards,
+  Request,
+  HttpException,
+  HttpStatus,
+  OnModuleInit,
+  OnModuleDestroy,
 } from '@nestjs/common';
 import { ClientProxy } from '@nestjs/microservices';
-import { firstValueFrom } from 'rxjs';
+import { firstValueFrom, catchError, timeout, of } from 'rxjs';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
-import { Roles } from '../decorators/roles.decorator';
 import { Role } from '@app/common';
+import { Roles } from '../decorators/roles.decorator';
+import { Public } from '../decorators/public.decorator';
 
-@ApiTags('이벤트 및 보상')
+/**
+ * 이벤트 컨트롤러 (게이트웨이) - 완전한 구현
+ */
+@ApiTags('events')
 @Controller('events')
-@ApiBearerAuth()
-export class EventController {
-  constructor(@Inject('EVENT_SERVICE') private readonly eventClient: ClientProxy) {}
+export class EventController implements OnModuleInit, OnModuleDestroy {
+  private readonly logger = new Logger(EventController.name);
+  private isConnected = false;
 
-  /**
-   * 모든 이벤트 조회
-   * @param query 페이지네이션 및 필터링 옵션
-   * @returns 이벤트 목록
-   */
-  @Get()
-  @ApiOperation({ summary: '이벤트 목록 조회', description: '모든 활성 이벤트를 조회합니다.' })
-  @ApiResponse({ status: 200, description: '이벤트 목록이 성공적으로 조회되었습니다.' })
-  async findAllEvents(@Query() query: any) {
-    return await firstValueFrom(this.eventClient.send('find_all_events', query));
+  constructor(@Inject('EVENT_SERVICE') private eventClient: ClientProxy) {}
+
+  async onModuleInit() {
+    try {
+      this.logger.log('Attempting to connect to Event Service...');
+      await this.eventClient.connect();
+      this.isConnected = true;
+      this.logger.log('Successfully connected to Event Service');
+    } catch (error) {
+      this.logger.error('Failed to connect to Event Service on init:', error);
+      this.isConnected = false;
+    }
   }
 
-  /**
-   * 특정 이벤트 조회
-   * @param id 이벤트 ID
-   * @returns 이벤트 정보
-   */
-  @Get(':id')
-  @ApiOperation({
-    summary: '이벤트 상세 조회',
-    description: '특정 이벤트의 상세 정보를 조회합니다.',
-  })
-  @ApiResponse({ status: 200, description: '이벤트가 성공적으로 조회되었습니다.' })
-  @ApiResponse({ status: 404, description: '이벤트를 찾을 수 없습니다.' })
-  async findEventById(@Param('id') id: string) {
-    return await firstValueFrom(this.eventClient.send('find_event_by_id', { id }));
+  async onModuleDestroy() {
+    try {
+      await this.eventClient.close();
+      this.logger.log('Disconnected from Event Service');
+    } catch (error) {
+      this.logger.error('Error closing Event Service connection:', error);
+    }
   }
 
+  private async ensureConnection() {
+    if (!this.isConnected) {
+      try {
+        this.logger.log('Attempting to reconnect to Event Service...');
+        await this.eventClient.connect();
+        this.isConnected = true;
+        this.logger.log('Successfully reconnected to Event Service');
+      } catch (error) {
+        this.logger.error('Failed to reconnect to Event Service:', error);
+        throw new HttpException(
+          'Unable to connect to Event Service',
+          HttpStatus.SERVICE_UNAVAILABLE,
+        );
+      }
+    }
+  }
+
+  // =================== EVENT ENDPOINTS ===================
+
   /**
-   * 새 이벤트 생성
-   * @param createEventDto 이벤트 생성 정보
-   * @returns 생성된 이벤트 정보
+   * 이벤트 생성 (운영자/관리자 전용)
    */
   @Post()
-  @Roles(Role.ADMIN, Role.OPERATOR)
-  @ApiOperation({ summary: '이벤트 생성', description: '새로운 이벤트를 생성합니다.' })
-  @ApiResponse({ status: 201, description: '이벤트가 성공적으로 생성되었습니다.' })
-  @ApiResponse({ status: 400, description: '이벤트 정보가 유효하지 않습니다.' })
-  async createEvent(@Body() createEventDto: any) {
-    return await firstValueFrom(this.eventClient.send('create_event', createEventDto));
+  @ApiOperation({ summary: '이벤트 생성 (운영자/관리자 전용)' })
+  @ApiBearerAuth()
+  @Roles(Role.OPERATOR, Role.ADMIN)
+  @ApiResponse({ status: 201, description: '이벤트가 성공적으로 생성됨' })
+  @ApiResponse({ status: 400, description: '잘못된 입력' })
+  @ApiResponse({ status: 401, description: '인증 실패' })
+  @ApiResponse({ status: 403, description: '권한 없음' })
+  async create(@Body() createEventDto: any, @Request() req) {
+    this.logger.log(`Creating event: ${createEventDto.name}`);
+    await this.ensureConnection();
+
+    try {
+      const result = await firstValueFrom(
+        this.eventClient
+          .send('event.create', {
+            dto: createEventDto,
+            userId: req.user.userId,
+          })
+          .pipe(
+            timeout(15000),
+            catchError(error => {
+              this.logger.error('Microservice error creating event:', error);
+              throw new HttpException(
+                `Failed to create event: ${error.message || 'Unknown error'}`,
+                error.status || HttpStatus.INTERNAL_SERVER_ERROR,
+              );
+            }),
+          ),
+      );
+
+      this.logger.log(`Event created successfully: ${result._id}`);
+      return result;
+    } catch (error) {
+      this.logger.error('Gateway error creating event:', error);
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      throw new HttpException('Failed to create event', HttpStatus.INTERNAL_SERVER_ERROR);
+    }
   }
 
   /**
-   * 이벤트 정보 업데이트
-   * @param id 이벤트 ID
-   * @param updateEventDto 업데이트할 이벤트 정보
-   * @returns 업데이트된 이벤트 정보
+   * 모든 이벤트 조회 (운영자/관리자/감사자 전용)
    */
-  @Put(':id')
-  @Roles(Role.ADMIN, Role.OPERATOR)
-  @ApiOperation({ summary: '이벤트 수정', description: '기존 이벤트의 정보를 수정합니다.' })
-  @ApiResponse({ status: 200, description: '이벤트가 성공적으로 수정되었습니다.' })
-  @ApiResponse({ status: 404, description: '이벤트를 찾을 수 없습니다.' })
-  async updateEvent(@Param('id') id: string, @Body() updateEventDto: any) {
-    return await firstValueFrom(this.eventClient.send('update_event', { id, ...updateEventDto }));
+  @Get()
+  @ApiOperation({ summary: '모든 이벤트 조회 (운영자/관리자/감사자 전용)' })
+  @ApiBearerAuth()
+  @Roles(Role.OPERATOR, Role.ADMIN, Role.AUDITOR)
+  @ApiResponse({ status: 200, description: '이벤트 목록' })
+  @ApiResponse({ status: 401, description: '인증 실패' })
+  @ApiResponse({ status: 403, description: '권한 없음' })
+  async findAll(@Query() paginationDto: any) {
+    this.logger.log('Finding all events');
+    await this.ensureConnection();
+
+    try {
+      const result = await firstValueFrom(
+        this.eventClient.send('event.findAll', paginationDto || {}).pipe(
+          timeout(15000),
+          catchError(error => {
+            this.logger.error('Microservice error finding all events:', error);
+            throw new HttpException(
+              `Failed to find events: ${error.message || 'Unknown error'}`,
+              error.status || HttpStatus.INTERNAL_SERVER_ERROR,
+            );
+          }),
+        ),
+      );
+
+      this.logger.log(
+        `Successfully retrieved ${result?.data?.length || 0} events out of ${result?.meta?.total || 0} total`,
+      );
+      return result;
+    } catch (error) {
+      this.logger.error('Gateway error finding all events:', error);
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      throw new HttpException(
+        'Failed to retrieve events from service',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
   }
 
   /**
-   * 이벤트 삭제
-   * @param id 이벤트 ID
-   * @returns 삭제 결과
+   * 활성 이벤트 조회 (인증 불필요)
    */
-  @Delete(':id')
-  @Roles(Role.ADMIN)
-  @ApiOperation({ summary: '이벤트 삭제', description: '이벤트를 삭제합니다.' })
-  @ApiResponse({ status: 200, description: '이벤트가 성공적으로 삭제되었습니다.' })
-  @ApiResponse({ status: 404, description: '이벤트를 찾을 수 없습니다.' })
-  async deleteEvent(@Param('id') id: string) {
-    return await firstValueFrom(this.eventClient.send('delete_event', { id }));
+  @Public()
+  @Get('active')
+  @ApiOperation({ summary: '활성 이벤트 조회' })
+  @ApiResponse({ status: 200, description: '활성 이벤트 목록' })
+  async findActive(@Query() paginationDto: any) {
+    this.logger.log('Finding active events');
+    await this.ensureConnection();
+
+    try {
+      const result = await firstValueFrom(
+        this.eventClient.send('event.findActive', paginationDto || {}).pipe(
+          timeout(15000),
+          catchError(error => {
+            this.logger.error('Microservice error finding active events:', error);
+            throw new HttpException(
+              `Failed to find active events: ${error.message || 'Unknown error'}`,
+              error.status || HttpStatus.INTERNAL_SERVER_ERROR,
+            );
+          }),
+        ),
+      );
+
+      this.logger.log(`Successfully retrieved ${result?.data?.length || 0} active events`);
+      return result;
+    } catch (error) {
+      this.logger.error('Gateway error finding active events:', error);
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      throw new HttpException(
+        'Failed to retrieve active events from service',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
   }
 
   /**
-   * 이벤트 보상 정보 조회
-   * @param id 이벤트 ID
-   * @returns 보상 목록
+   * ID로 이벤트 조회
+   */
+  @Get(':id')
+  @ApiOperation({ summary: 'ID로 이벤트 조회' })
+  @ApiResponse({ status: 200, description: '이벤트 정보' })
+  @ApiResponse({ status: 404, description: '이벤트를 찾을 수 없음' })
+  async findOne(@Param('id') id: string) {
+    this.logger.log(`Finding event by ID: ${id}`);
+    await this.ensureConnection();
+
+    try {
+      const result = await firstValueFrom(
+        this.eventClient.send('event.findById', id).pipe(
+          timeout(15000),
+          catchError(error => {
+            this.logger.error('Microservice error finding event by ID:', error);
+            throw new HttpException(
+              `Failed to find event: ${error.message || 'Unknown error'}`,
+              error.status || HttpStatus.NOT_FOUND,
+            );
+          }),
+        ),
+      );
+
+      this.logger.log(`Successfully found event: ${result.name}`);
+      return result;
+    } catch (error) {
+      this.logger.error('Gateway error finding event by ID:', error);
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      throw new HttpException('Failed to find event', HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+  }
+
+  /**
+   * 이벤트 상태 업데이트 (운영자/관리자 전용)
+   */
+  @Patch(':id/status')
+  @ApiOperation({ summary: '이벤트 상태 업데이트 (운영자/관리자 전용)' })
+  @ApiBearerAuth()
+  @Roles(Role.OPERATOR, Role.ADMIN)
+  @ApiResponse({ status: 200, description: '이벤트 상태가 업데이트됨' })
+  @ApiResponse({ status: 400, description: '잘못된 입력' })
+  @ApiResponse({ status: 401, description: '인증 실패' })
+  @ApiResponse({ status: 403, description: '권한 없음' })
+  @ApiResponse({ status: 404, description: '이벤트를 찾을 수 없음' })
+  async updateStatus(@Param('id') id: string, @Body('status') status: string, @Request() req) {
+    this.logger.log(`Updating event status: ${id} to ${status}`);
+    await this.ensureConnection();
+
+    try {
+      const result = await firstValueFrom(
+        this.eventClient
+          .send('event.updateStatus', {
+            id,
+            status,
+            userId: req.user.userId,
+          })
+          .pipe(
+            timeout(15000),
+            catchError(error => {
+              this.logger.error('Microservice error updating event status:', error);
+              throw new HttpException(
+                `Failed to update event status: ${error.message || 'Unknown error'}`,
+                error.status || HttpStatus.INTERNAL_SERVER_ERROR,
+              );
+            }),
+          ),
+      );
+
+      this.logger.log(`Event status updated successfully`);
+      return result;
+    } catch (error) {
+      this.logger.error('Gateway error updating event status:', error);
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      throw new HttpException('Failed to update event status', HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+  }
+
+  /**
+   * 이벤트 조건 확인
+   */
+  @Post(':eventId/check-condition')
+  @ApiOperation({ summary: '이벤트 조건 확인' })
+  @ApiBearerAuth()
+  @ApiResponse({ status: 200, description: '이벤트 조건 확인 결과' })
+  @ApiResponse({ status: 400, description: '잘못된 입력' })
+  @ApiResponse({ status: 401, description: '인증 실패' })
+  @ApiResponse({ status: 404, description: '이벤트를 찾을 수 없음' })
+  async checkEventCondition(@Param('eventId') eventId: string, @Request() req) {
+    this.logger.log(`Checking event condition for user ${req.user.userId}, event: ${eventId}`);
+    await this.ensureConnection();
+
+    try {
+      const result = await firstValueFrom(
+        this.eventClient
+          .send('event.checkCondition', {
+            userId: req.user.userId,
+            eventId: eventId,
+          })
+          .pipe(
+            timeout(15000),
+            catchError(error => {
+              this.logger.error('Microservice error checking event condition:', error);
+              throw new HttpException(
+                `Failed to check event condition: ${error.message || 'Unknown error'}`,
+                error.status || HttpStatus.INTERNAL_SERVER_ERROR,
+              );
+            }),
+          ),
+      );
+
+      this.logger.log(`Event condition check result: ${result}`);
+      return { eventId, userId: req.user.userId, conditionMet: result };
+    } catch (error) {
+      this.logger.error('Gateway error checking event condition:', error);
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      throw new HttpException('Failed to check event condition', HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+  }
+
+  // =================== REWARD ENDPOINTS ===================
+
+  /**
+   * 보상 생성 (운영자/관리자 전용)
+   */
+  @Post('rewards')
+  @ApiOperation({ summary: '보상 생성 (운영자/관리자 전용)' })
+  @ApiBearerAuth()
+  @Roles(Role.OPERATOR, Role.ADMIN)
+  @ApiResponse({ status: 201, description: '보상이 성공적으로 생성됨' })
+  @ApiResponse({ status: 400, description: '잘못된 입력' })
+  @ApiResponse({ status: 401, description: '인증 실패' })
+  @ApiResponse({ status: 403, description: '권한 없음' })
+  async createReward(@Body() createRewardDto: any, @Request() req) {
+    this.logger.log(`Creating reward: ${createRewardDto.name}`);
+    await this.ensureConnection();
+
+    try {
+      const result = await firstValueFrom(
+        this.eventClient
+          .send('reward.create', {
+            dto: createRewardDto,
+            userId: req.user.userId,
+          })
+          .pipe(
+            timeout(15000),
+            catchError(error => {
+              this.logger.error('Microservice error creating reward:', error);
+              throw new HttpException(
+                `Failed to create reward: ${error.message || 'Unknown error'}`,
+                error.status || HttpStatus.INTERNAL_SERVER_ERROR,
+              );
+            }),
+          ),
+      );
+
+      this.logger.log(`Reward created successfully: ${result._id}`);
+      return result;
+    } catch (error) {
+      this.logger.error('Gateway error creating reward:', error);
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      throw new HttpException('Failed to create reward', HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+  }
+
+  /**
+   * 모든 보상 조회 (운영자/관리자/감사자 전용)
+   */
+  @Get('rewards')
+  @ApiOperation({ summary: '모든 보상 조회 (운영자/관리자/감사자 전용)' })
+  @ApiBearerAuth()
+  @Roles(Role.OPERATOR, Role.ADMIN, Role.AUDITOR)
+  @ApiResponse({ status: 200, description: '보상 목록' })
+  @ApiResponse({ status: 401, description: '인증 실패' })
+  @ApiResponse({ status: 403, description: '권한 없음' })
+  async findAllRewards(@Query() paginationDto: any) {
+    this.logger.log('Finding all rewards');
+    await this.ensureConnection();
+
+    try {
+      const result = await firstValueFrom(
+        this.eventClient.send('reward.findAll', paginationDto || {}).pipe(
+          timeout(15000),
+          catchError(error => {
+            this.logger.error('Microservice error finding all rewards:', error);
+            throw new HttpException(
+              `Failed to find rewards: ${error.message || 'Unknown error'}`,
+              error.status || HttpStatus.INTERNAL_SERVER_ERROR,
+            );
+          }),
+        ),
+      );
+
+      this.logger.log(`Successfully retrieved ${result?.data?.length || 0} rewards`);
+      return result;
+    } catch (error) {
+      this.logger.error('Gateway error finding all rewards:', error);
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      throw new HttpException(
+        'Failed to retrieve rewards from service',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  /**
+   * 이벤트별 보상 조회
    */
   @Get(':id/rewards')
-  @ApiOperation({
-    summary: '이벤트 보상 조회',
-    description: '특정 이벤트의 보상 정보를 조회합니다.',
-  })
-  @ApiResponse({ status: 200, description: '보상 정보가 성공적으로 조회되었습니다.' })
-  async getEventRewards(@Param('id') id: string) {
-    return await firstValueFrom(this.eventClient.send('get_event_rewards', { eventId: id }));
+  @ApiOperation({ summary: '이벤트별 보상 조회' })
+  @ApiResponse({ status: 200, description: '보상 목록' })
+  @ApiResponse({ status: 404, description: '이벤트를 찾을 수 없음' })
+  async findRewardsByEventId(@Param('id') id: string) {
+    this.logger.log(`Finding rewards for event: ${id}`);
+    await this.ensureConnection();
+
+    try {
+      const result = await firstValueFrom(
+        this.eventClient.send('reward.findByEventId', id).pipe(
+          timeout(15000),
+          catchError(error => {
+            this.logger.error('Microservice error finding rewards by event ID:', error);
+            throw new HttpException(
+              `Failed to find rewards: ${error.message || 'Unknown error'}`,
+              error.status || HttpStatus.INTERNAL_SERVER_ERROR,
+            );
+          }),
+        ),
+      );
+
+      this.logger.log(`Found ${result?.length || 0} rewards for event ${id}`);
+      return result;
+    } catch (error) {
+      this.logger.error('Gateway error finding rewards by event ID:', error);
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      throw new HttpException('Failed to find rewards', HttpStatus.INTERNAL_SERVER_ERROR);
+    }
   }
 
   /**
-   * 이벤트에 새 보상 추가
-   * @param id 이벤트 ID
-   * @param createRewardDto 보상 생성 정보
-   * @returns 생성된 보상 정보
+   * ID로 보상 조회
    */
-  @Post(':id/rewards')
-  @Roles(Role.ADMIN, Role.OPERATOR)
-  @ApiOperation({ summary: '보상 생성', description: '이벤트에 새 보상을 추가합니다.' })
-  @ApiResponse({ status: 201, description: '보상이 성공적으로 생성되었습니다.' })
-  async createReward(@Param('id') id: string, @Body() createRewardDto: any) {
-    return await firstValueFrom(
-      this.eventClient.send('create_reward', { eventId: id, ...createRewardDto }),
-    );
+  @Get('rewards/:rewardId')
+  @ApiOperation({ summary: 'ID로 보상 조회' })
+  @ApiResponse({ status: 200, description: '보상 정보' })
+  @ApiResponse({ status: 404, description: '보상을 찾을 수 없음' })
+  async findRewardById(@Param('rewardId') rewardId: string) {
+    this.logger.log(`Finding reward by ID: ${rewardId}`);
+    await this.ensureConnection();
+
+    try {
+      const result = await firstValueFrom(
+        this.eventClient.send('reward.findById', rewardId).pipe(
+          timeout(15000),
+          catchError(error => {
+            this.logger.error('Microservice error finding reward by ID:', error);
+            throw new HttpException(
+              `Failed to find reward: ${error.message || 'Unknown error'}`,
+              error.status || HttpStatus.NOT_FOUND,
+            );
+          }),
+        ),
+      );
+
+      this.logger.log(`Successfully found reward: ${result.name}`);
+      return result;
+    } catch (error) {
+      this.logger.error('Gateway error finding reward by ID:', error);
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      throw new HttpException('Failed to find reward', HttpStatus.INTERNAL_SERVER_ERROR);
+    }
   }
 
   /**
    * 보상 요청
-   * @param eventId 이벤트 ID
-   * @param requestRewardDto 보상 요청 정보
-   * @returns 보상 요청 결과
    */
-  @Post(':id/request-reward')
-  @Roles(Role.USER, Role.ADMIN)
-  @ApiOperation({ summary: '보상 요청', description: '사용자가 이벤트 보상을 요청합니다.' })
-  @ApiResponse({ status: 201, description: '보상 요청이 성공적으로 처리되었습니다.' })
-  async requestReward(@Param('id') eventId: string, @Body() requestRewardDto: any) {
-    return await firstValueFrom(
-      this.eventClient.send('request_reward', { eventId, ...requestRewardDto }),
-    );
-  }
+  @Post('rewards/request')
+  @ApiOperation({ summary: '보상 요청' })
+  @ApiBearerAuth()
+  @ApiResponse({ status: 201, description: '보상 요청이 생성됨' })
+  @ApiResponse({ status: 400, description: '잘못된 입력' })
+  @ApiResponse({ status: 401, description: '인증 실패' })
+  @ApiResponse({ status: 409, description: '중복 요청' })
+  async requestReward(@Body() requestRewardDto: any, @Request() req) {
+    this.logger.log(`User ${req.user.userId} requesting reward`);
+    await this.ensureConnection();
+    try {
+      const result = await firstValueFrom(
+        this.eventClient
+          .send('reward.request', {
+            dto: requestRewardDto,
+            userId: req.user.userId,
+          })
+          .pipe(
+            timeout(15000),
+            catchError(error => {
+              this.logger.error('Microservice error requesting reward:', error);
+              throw new HttpException(
+                `Failed to request reward: ${error.message || 'Unknown error'}`,
+                error.status || HttpStatus.INTERNAL_SERVER_ERROR,
+              );
+            }),
+          ),
+      );
 
-  /**
-   * 사용자의 보상 요청 이력 조회
-   * @returns 보상 요청 이력
-   */
-  @Get('user/reward-requests')
-  @Roles(Role.USER, Role.ADMIN)
-  @ApiOperation({
-    summary: '사용자 보상 요청 이력',
-    description: '로그인한 사용자의 보상 요청 이력을 조회합니다.',
-  })
-  @ApiResponse({ status: 200, description: '보상 요청 이력이 성공적으로 조회되었습니다.' })
-  async getUserRewardRequests(@Query() query: any) {
-    return await firstValueFrom(this.eventClient.send('get_user_reward_requests', query));
+      this.logger.log(`Reward request created: ${result._id}`);
+      return result;
+    } catch (error) {
+      this.logger.error('Gateway error requesting reward:', error);
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      throw new HttpException('Failed to request reward', HttpStatus.INTERNAL_SERVER_ERROR);
+    }
   }
-
   /**
-   * 모든 보상 요청 이력 조회 (관리자 및 감사자용)
-   * @param query 페이지네이션 및 필터링 옵션
-   * @returns 보상 요청 이력
-   */
-  @Get('admin/reward-requests')
+
+사용자별 보상 요청 조회
+*/
+  @Get('rewards/user/requests')
+  @ApiOperation({ summary: '사용자별 보상 요청 조회' })
+  @ApiBearerAuth()
+  @ApiResponse({ status: 200, description: '보상 요청 목록' })
+  @ApiResponse({ status: 401, description: '인증 실패' })
+  async getUserRequests(@Query() paginationDto: any, @Request() req) {
+    this.logger.log(`Getting requests for user: ${req.user.userId}`);
+    await this.ensureConnection();
+
+    try {
+      const result = await firstValueFrom(
+        this.eventClient
+          .send('reward.getUserRequests', {
+            dto: paginationDto,
+            userId: req.user.userId,
+          })
+          .pipe(
+            timeout(15000),
+            catchError(error => {
+              this.logger.error('Microservice error getting user requests:', error);
+              throw new HttpException(
+                `Failed to get user requests: ${error.message || 'Unknown error'}`,
+                error.status || HttpStatus.INTERNAL_SERVER_ERROR,
+              );
+            }),
+          ),
+      );
+
+      this.logger.log(`Found ${result?.data?.length || 0} requests for user`);
+      return result;
+    } catch (error) {
+      this.logger.error('Gateway error getting user requests:', error);
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      throw new HttpException('Failed to get user requests', HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+  }
+  /**
+
+사용자별 대기 중인 보상 조회
+*/
+  @Get('rewards/user/pending')
+  @ApiOperation({ summary: '사용자별 대기 중인 보상 조회' })
+  @ApiBearerAuth()
+  @ApiResponse({ status: 200, description: '대기 중인 보상 목록' })
+  @ApiResponse({ status: 401, description: '인증 실패' })
+  async getPendingRewards(@Request() req) {
+    this.logger.log(`Getting pending rewards for user: ${req.user.userId}`);
+    await this.ensureConnection();
+
+    try {
+      const result = await firstValueFrom(
+        this.eventClient.send('reward.getPendingRewards', req.user.userId).pipe(
+          timeout(15000),
+          catchError(error => {
+            this.logger.error('Microservice error getting pending rewards:', error);
+            throw new HttpException(
+              `Failed to get pending rewards: ${error.message || 'Unknown error'}`,
+              error.status || HttpStatus.INTERNAL_SERVER_ERROR,
+            );
+          }),
+        ),
+      );
+
+      this.logger.log(`Found ${result?.length || 0} pending rewards for user`);
+      return result;
+    } catch (error) {
+      this.logger.error('Gateway error getting pending rewards:', error);
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      throw new HttpException('Failed to get pending rewards', HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+  }
+  /**
+
+모든 보상 요청 조회 (관리자/운영자/감사자 전용)
+*/
+  @Get('rewards/admin/requests')
+  @ApiOperation({ summary: '모든 보상 요청 조회 (관리자/운영자/감사자 전용)' })
+  @ApiBearerAuth()
   @Roles(Role.ADMIN, Role.OPERATOR, Role.AUDITOR)
-  @ApiOperation({
-    summary: '전체 보상 요청 이력',
-    description: '모든 사용자의 보상 요청 이력을 조회합니다.',
-  })
-  @ApiResponse({ status: 200, description: '보상 요청 이력이 성공적으로 조회되었습니다.' })
-  async getAllRewardRequests(@Query() query: any) {
-    return await firstValueFrom(this.eventClient.send('get_all_reward_requests', query));
-  }
+  @ApiResponse({ status: 200, description: '보상 요청 목록' })
+  @ApiResponse({ status: 401, description: '인증 실패' })
+  @ApiResponse({ status: 403, description: '권한 없음' })
+  async getAllRequests(@Query() paginationDto: any, @Query('status') status?: string) {
+    this.logger.log('Getting all reward requests');
+    await this.ensureConnection();
 
-  /**
-   * 보상 요청 승인 (관리자 및 운영자용)
-   * @param requestId 보상 요청 ID
-   * @returns 승인 결과
-   */
-  @Put('admin/reward-requests/:requestId/approve')
-  @Roles(Role.ADMIN, Role.OPERATOR)
-  @ApiOperation({
-    summary: '보상 요청 승인',
-    description: '사용자의 보상 요청을 승인합니다.',
-  })
-  @ApiResponse({ status: 200, description: '보상 요청이 성공적으로 승인되었습니다.' })
-  async approveRewardRequest(@Param('requestId') requestId: string) {
-    return await firstValueFrom(this.eventClient.send('approve_reward_request', { requestId }));
-  }
+    try {
+      const result = await firstValueFrom(
+        this.eventClient
+          .send('reward.getAllRequests', {
+            dto: paginationDto,
+            status,
+          })
+          .pipe(
+            timeout(15000),
+            catchError(error => {
+              this.logger.error('Microservice error getting all requests:', error);
+              throw new HttpException(
+                `Failed to get all requests: ${error.message || 'Unknown error'}`,
+                error.status || HttpStatus.INTERNAL_SERVER_ERROR,
+              );
+            }),
+          ),
+      );
 
+      this.logger.log(`Found ${result?.data?.length || 0} total requests`);
+      return result;
+    } catch (error) {
+      this.logger.error('Gateway error getting all requests:', error);
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      throw new HttpException('Failed to get all requests', HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+  }
   /**
-   * 보상 요청 거부 (관리자 및 운영자용)
-   * @param requestId 보상 요청 ID
-   * @param rejectDto 거부 사유
-   * @returns 거부 결과
-   */
-  @Put('admin/reward-requests/:requestId/reject')
-  @Roles(Role.ADMIN, Role.OPERATOR)
-  @ApiOperation({
-    summary: '보상 요청 거부',
-    description: '사용자의 보상 요청을 거부합니다.',
-  })
-  @ApiResponse({ status: 200, description: '보상 요청이 성공적으로 거부되었습니다.' })
-  async rejectRewardRequest(@Param('requestId') requestId: string, @Body() rejectDto: any) {
-    return await firstValueFrom(
-      this.eventClient.send('reject_reward_request', { requestId, ...rejectDto }),
-    );
+
+사용자 이벤트 로그 발생
+*/
+  @Post('log')
+  @ApiOperation({ summary: '사용자 이벤트 로그 발생' })
+  @ApiBearerAuth()
+  @ApiResponse({ status: 200, description: '이벤트 로그가 생성됨' })
+  @ApiResponse({ status: 400, description: '잘못된 입력' })
+  @ApiResponse({ status: 401, description: '인증 실패' })
+  async createEventLog(@Body() eventLogDto: any, @Request() req) {
+    this.logger.log(`Creating event log for user ${req.user.userId}: ${eventLogDto.eventType}`);
+    await this.ensureConnection();
+
+    try {
+      const result = await firstValueFrom(
+        this.eventClient
+          .send('event.log', {
+            userId: req.user.userId,
+            eventType: eventLogDto.eventType,
+            data: eventLogDto.data,
+            timestamp: eventLogDto.timestamp || new Date(),
+          })
+          .pipe(
+            timeout(15000),
+            catchError(error => {
+              this.logger.error('Microservice error creating event log:', error);
+              throw new HttpException(
+                `Failed to create event log: ${error.message || 'Unknown error'}`,
+                error.status || HttpStatus.INTERNAL_SERVER_ERROR,
+              );
+            }),
+          ),
+      );
+
+      this.logger.log(`Event log created successfully`);
+      return result;
+    } catch (error) {
+      this.logger.error('Gateway error creating event log:', error);
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      throw new HttpException('Failed to create event log', HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+  }
+  /**
+
+이벤트 통계 조회 (관리자/운영자/감사자 전용)
+*/
+  @Get('statistics/events')
+  @ApiOperation({ summary: '이벤트 통계 조회 (관리자/운영자/감사자 전용)' })
+  @ApiBearerAuth()
+  @Roles(Role.ADMIN, Role.OPERATOR, Role.AUDITOR)
+  @ApiResponse({ status: 200, description: '이벤트 통계' })
+  @ApiResponse({ status: 401, description: '인증 실패' })
+  @ApiResponse({ status: 403, description: '권한 없음' })
+  async getEventStatistics(@Query() query: any) {
+    this.logger.log('Getting event statistics');
+    await this.ensureConnection();
+
+    try {
+      const [allEvents, activeEvents] = await Promise.all([
+        firstValueFrom(
+          this.eventClient.send('event.findAll', { page: 1, limit: 1 }).pipe(
+            timeout(15000),
+            catchError(() => of({ data: [], meta: { total: 0 } })),
+          ),
+        ),
+        firstValueFrom(
+          this.eventClient.send('event.findActive', { page: 1, limit: 1 }).pipe(
+            timeout(15000),
+            catchError(() => of({ data: [], meta: { total: 0 } })),
+          ),
+        ),
+      ]);
+
+      const statistics = {
+        totalEvents: allEvents.meta?.total || 0,
+        activeEvents: activeEvents.meta?.total || 0,
+        inactiveEvents: (allEvents.meta?.total || 0) - (activeEvents.meta?.total || 0),
+        timestamp: new Date(),
+      };
+
+      this.logger.log(`Event statistics retrieved: ${JSON.stringify(statistics)}`);
+      return statistics;
+    } catch (error) {
+      this.logger.error('Gateway error getting event statistics:', error);
+      throw new HttpException('Failed to get event statistics', HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+  }
+  /**
+
+보상 통계 조회 (관리자/운영자/감사자 전용)
+*/
+  @Get('statistics/rewards')
+  @ApiOperation({ summary: '보상 통계 조회 (관리자/운영자/감사자 전용)' })
+  @ApiBearerAuth()
+  @Roles(Role.ADMIN, Role.OPERATOR, Role.AUDITOR)
+  @ApiResponse({ status: 200, description: '보상 통계' })
+  @ApiResponse({ status: 401, description: '인증 실패' })
+  @ApiResponse({ status: 403, description: '권한 없음' })
+  async getRewardStatistics(@Query() query: any) {
+    this.logger.log('Getting reward statistics');
+    await this.ensureConnection();
+
+    try {
+      const [allRewards, allRequests] = await Promise.all([
+        firstValueFrom(
+          this.eventClient.send('reward.findAll', { page: 1, limit: 1 }).pipe(
+            timeout(15000),
+            catchError(() => of({ data: [], meta: { total: 0 } })),
+          ),
+        ),
+        firstValueFrom(
+          this.eventClient
+            .send('reward.getAllRequests', {
+              dto: { page: 1, limit: 1 },
+            })
+            .pipe(
+              timeout(15000),
+              catchError(() => of({ data: [], meta: { total: 0 } })),
+            ),
+        ),
+      ]);
+
+      const statistics = {
+        totalRewards: allRewards.meta?.total || 0,
+        totalRequests: allRequests.meta?.total || 0,
+        timestamp: new Date(),
+      };
+
+      this.logger.log(`Reward statistics retrieved: ${JSON.stringify(statistics)}`);
+      return statistics;
+    } catch (error) {
+      this.logger.error('Gateway error getting reward statistics:', error);
+      throw new HttpException('Failed to get reward statistics', HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+  }
+  /**
+
+이벤트 서비스 헬스 체크
+*/
+  @Public()
+  @Get('health')
+  @ApiOperation({ summary: '이벤트 서비스 헬스 체크' })
+  @ApiResponse({ status: 200, description: '서비스 상태' })
+  async healthCheck() {
+    this.logger.log('Performing health check');
+
+    try {
+      await this.ensureConnection();
+
+      const healthStatus = {
+        status: 'healthy',
+        timestamp: new Date(),
+        service: 'event-gateway',
+        eventServiceConnected: this.isConnected,
+        version: '1.0.0',
+      };
+
+      return healthStatus;
+    } catch (error) {
+      this.logger.error('Health check failed:', error);
+
+      const healthStatus = {
+        status: 'unhealthy',
+        timestamp: new Date(),
+        service: 'event-gateway',
+        eventServiceConnected: false,
+        error: error.message,
+        version: '1.0.0',
+      };
+
+      throw new HttpException(healthStatus, HttpStatus.SERVICE_UNAVAILABLE);
+    }
   }
 }

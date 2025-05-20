@@ -1,89 +1,77 @@
-import { Controller } from '@nestjs/common';
+import { Controller, Post, Body, Logger, Request, UseGuards } from '@nestjs/common';
 import { MessagePattern, Payload } from '@nestjs/microservices';
+import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
-import { LoginUserDto } from '../dto/login-user.dto';
 import { CreateUserDto } from '../dto/create-user.dto';
+import { LoginUserDto } from '../dto/login-user.dto';
+import { LocalAuthGuard } from '../guards/local-auth.guard';
 
 /**
  * 인증 컨트롤러
- * 인증 관련 메시지 패턴을 처리합니다.
  */
-@Controller()
+@ApiTags('auth')
+@Controller('auth')
 export class AuthController {
+  private readonly logger = new Logger(AuthController.name);
+
   constructor(private readonly authService: AuthService) {}
 
   /**
-   * 사용자 로그인 처리
-   * @param loginUserDto 로그인 정보
-   * @returns JWT 토큰 및 사용자 정보
+   * 회원가입
    */
-  @MessagePattern('login_user')
-  async login(@Payload() loginUserDto: LoginUserDto) {
-    return await this.authService.login(loginUserDto);
+  @Post('register')
+  @ApiOperation({ summary: '회원가입' })
+  @ApiResponse({ status: 201, description: '회원가입 성공' })
+  @ApiResponse({ status: 400, description: '잘못된 입력' })
+  @ApiResponse({ status: 409, description: '중복된 사용자명 또는 이메일' })
+  async register(@Body() createUserDto: CreateUserDto) {
+    this.logger.log(`Registration attempt for user: ${createUserDto.username}`);
+    return this.authService.register(createUserDto);
   }
 
   /**
-   * 사용자 등록 처리
-   * @param createUserDto 사용자 등록 정보
-   * @returns 등록된 사용자 정보
+   * 로그인
    */
-  @MessagePattern('register_user')
-  async register(@Payload() createUserDto: CreateUserDto) {
-    return await this.authService.register(createUserDto);
+  @UseGuards(LocalAuthGuard)
+  @Post('login')
+  @ApiOperation({ summary: '로그인' })
+  @ApiResponse({ status: 200, description: '로그인 성공' })
+  @ApiResponse({ status: 401, description: '인증 실패' })
+  async login(@Request() req) {
+    this.logger.log(`Login success for user: ${req.user.username}`);
+    return this.authService.login(req.user);
+  }
+
+  // ================ MICROSERVICE MESSAGE PATTERNS ================
+
+  /**
+   * 회원가입 (마이크로서비스 패턴)
+   */
+  @MessagePattern('auth.register')
+  async registerUser(@Payload() createUserDto: CreateUserDto) {
+    this.logger.log(`[Microservice] Registration attempt for user: ${createUserDto.username}`);
+    return this.authService.register(createUserDto);
   }
 
   /**
-   * JWT 토큰 검증
-   * @param payload JWT 토큰
-   * @returns 토큰에서 추출한 사용자 정보
+   * 로그인 (마이크로서비스 패턴)
    */
-  @MessagePattern('validate_token')
-  async validateToken(@Payload() payload: { token: string }) {
-    return await this.authService.validateToken(payload.token);
+  @MessagePattern('auth.login')
+  async loginUser(@Payload() loginUserDto: LoginUserDto) {
+    this.logger.log(`[Microservice] Login attempt for user: ${loginUserDto.username}`);
+    const user = await this.authService.validateUser(loginUserDto.username, loginUserDto.password);
+    if (!user) {
+      throw new Error('Invalid credentials');
+    }
+    return this.authService.login(user);
+  }
+
+  /**
+   * 사용자 조회 (마이크로서비스 패턴)
+   */
+  @MessagePattern('user.findById')
+  async findUserById(@Payload() userId: string) {
+    this.logger.log(`[Microservice] Finding user by ID: ${userId}`);
+    return this.authService.findById(userId);
   }
 }
-
-// import { Controller } from '@nestjs/common';
-// import { MessagePattern, Payload } from '@nestjs/microservices';
-// import { AuthService } from './auth.service';
-// import { LoginUserDto } from '../dto/login-user.dto';
-// import { CreateUserDto } from '../dto/create-user.dto';
-
-// /**
-//  * 인증 컨트롤러
-//  * 인증 관련 메시지 패턴을 처리합니다.
-//  */
-// @Controller()
-// export class AuthController {
-//   constructor(private readonly authService: AuthService) {}
-
-//   /**
-//    * 사용자 로그인 처리
-//    * @param loginUserDto 로그인 정보
-//    * @returns JWT 토큰 및 사용자 정보
-//    */
-//   @MessagePattern('login_user')
-//   async login(@Payload() loginUserDto: LoginUserDto) {
-//     return await this.authService.login(loginUserDto);
-//   }
-
-//   /**
-//    * 사용자 등록 처리
-//    * @param createUserDto 사용자 등록 정보
-//    * @returns 등록된 사용자 정보
-//    */
-//   @MessagePattern('register_user')
-//   async register(@Payload() createUserDto: CreateUserDto) {
-//     return await this.authService.register(createUserDto);
-//   }
-
-//   /**
-//    * JWT 토큰 검증
-//    * @param payload JWT 토큰
-//    * @returns 토큰에서 추출한 사용자 정보
-//    */
-//   @MessagePattern('validate_token')
-//   async validateToken(@Payload() payload: { token: string }) {
-//     return await this.authService.validateToken(payload.token);
-//   }
-// }

@@ -1,6 +1,8 @@
-# compiled output
+# Compiled output
 /dist
 /node_modules
+/apps/*/dist
+/libs/*/dist
 
 # Logs
 logs
@@ -13,6 +15,10 @@ lerna-debug.log*
 
 # OS
 .DS_Store
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
 
 # Tests
 /coverage
@@ -32,31 +38,76 @@ lerna-debug.log*
 !.vscode/launch.json
 !.vscode/extensions.json
 
-# dotenv environment variable files
-.env
-.env.development
-.env.test
-.env.production
-.env.local
+# Environment
+# .env
+# .env.test
+# .env.production
+# .env.*.local
+# *.env
 
-# docker volumes
-/data
+# NestJS
+.nest
 
-# temp directories
-/tmp
-/temp
+# Docker volumes
+docker-volumes/
 
-# cache
+# npm
+.npm
+package-lock.json
+
+# Temporary files
+tmp/
+temp/
+
+# Build artifacts
+build/
+dist/
+
+# Logs
+*.log
+
+# Dependency directories
+node_modules/
+jspm_packages/
+
+# Debugging
+debug.log
+
+# Built TypeScript files
+*.js.map
+*.d.ts
+
+# Exclude docker-compose override files
+docker-compose.override.yml
+
+# Exclude personal scripts
+scripts/personal/
+
+# Exclude local configuration files
+*.local.json
+*.local.js
+*.local.ts
+
+# MongoDB data directory
+/data/db
+
+# Cache directories
+.cache/
+.webpack/
 .eslintcache
-.prettier-cache
+.stylelintcache
 
-# build artifacts
-*.tsbuildinfo
+# Swagger output
+swagger-static/
+
+# Terraform
+.terraform/
+terraform.tfstate
+terraform.tfstate.backup
 
 # # compiled output
 # /dist
 # /node_modules
-# /build
 
 # # Logs
 # logs
@@ -82,8 +133,6 @@ lerna-debug.log*
 # *.launch
 # .settings/
 # *.sublime-workspace
-
-# # IDE - VSCode
 # .vscode/*
 # !.vscode/settings.json
 # !.vscode/tasks.json
@@ -92,20 +141,78 @@ lerna-debug.log*
 
 # # dotenv environment variable files
 # .env
-# .env.development.local
-# .env.test.local
-# .env.production.local
+# .env.development
+# .env.test
+# .env.production
 # .env.local
 
-# # temp directory
-# .temp
-# .tmp
+# # docker volumes
+# /data
 
-# # Runtime data
-# pids
-# *.pid
-# *.seed
-# *.pid.lock
+# # temp directories
+# /tmp
+# /temp
 
-# # Diagnostic reports (https://nodejs.org/api/report.html)
-# report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
+# # cache
+# .eslintcache
+# .prettier-cache
+
+# # build artifacts
+# *.tsbuildinfo
+
+# # # compiled output
+# # /dist
+# # /node_modules
+# # /build
+
+# # # Logs
+# # logs
+# # *.log
+# # npm-debug.log*
+# # pnpm-debug.log*
+# # yarn-debug.log*
+# # yarn-error.log*
+# # lerna-debug.log*
+
+# # # OS
+# # .DS_Store
+
+# # # Tests
+# # /coverage
+# # /.nyc_output
+
+# # # IDEs and editors
+# # /.idea
+# # .project
+# # .classpath
+# # .c9/
+# # *.launch
+# # .settings/
+# # *.sublime-workspace
+
+# # # IDE - VSCode
+# # .vscode/*
+# # !.vscode/settings.json
+# # !.vscode/tasks.json
+# # !.vscode/launch.json
+# # !.vscode/extensions.json
+
+# # # dotenv environment variable files
+# # .env
+# # .env.development.local
+# # .env.test.local
+# # .env.production.local
+# # .env.local
+
+# # # temp directory
+# # .temp
+# # .tmp
+
+# # # Runtime data
+# # pids
+# # *.pid
+# # *.seed
+# # *.pid.lock
+
+# # # Diagnostic reports (https://nodejs.org/api/report.html)
+# # report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json

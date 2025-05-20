@@ -1,56 +1,32 @@
-FROM node:18-alpine AS development
+FROM node:18-alpine AS builder
 
-WORKDIR /usr/src/app
+WORKDIR /app
 
-COPY package*.json ./
-
-RUN npm install
-
+# Copy the entire project
 COPY . .
 
-RUN npm run build auth
+# Install all dependencies
+RUN npm install --legacy-peer-deps
 
-FROM node:18-alpine AS production
+# Build the auth application
+RUN npx nest build auth
 
-ARG NODE_ENV=production
-ENV NODE_ENV=${NODE_ENV}
+FROM node:18-alpine
 
-WORKDIR /usr/src/app
+WORKDIR /app
 
+# Copy package files
 COPY package*.json ./
 
-RUN npm install --only=production
+# Install only production dependencies
+RUN npm install --production --legacy-peer-deps
 
-COPY --from=development /usr/src/app/dist ./dist
-COPY --from=development /usr/src/app/node_modules ./node_modules
+# Copy the entire dist directory
+COPY --from=builder /app/dist ./dist
 
-CMD ["node", "dist/apps/auth/main"]
+USER node
 
-# FROM node:18-alpine As development
+EXPOSE 3001
 
-# WORKDIR /usr/src/app
-
-# COPY package*.json ./
-
-# RUN npm install
-
-# COPY . .
-
-# RUN npm run build auth
-
-# FROM node:18-alpine As production
-
-# ARG NODE_ENV=production
-# ENV NODE_ENV=${NODE_ENV}
-
-# WORKDIR /usr/src/app
-
-# COPY package*.json ./
-
-# RUN npm install --only=production
-
-# COPY . .
-
-# COPY --from=development /usr/src/app/dist ./dist
-
-# CMD ["node", "dist/apps/auth/main"]
+# Use the correct path to the main.js file
+CMD ["node", "dist/apps/auth/apps/auth/src/main.js"]

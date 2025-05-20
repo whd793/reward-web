@@ -1,14 +1,14 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsString, IsNotEmpty, IsNumber, IsOptional, Min } from 'class-validator';
+import { IsString, IsNotEmpty, IsNumber, Min, IsEnum, IsMongoId } from 'class-validator';
+import { RewardType } from '../schemas/reward.schema';
 
 /**
  * 보상 생성 DTO
- * 새 보상 생성 시 필요한 정보를 정의합니다.
  */
 export class CreateRewardDto {
   @ApiProperty({
     description: '보상 이름',
-    example: '골드 1000',
+    example: '골드 500개',
   })
   @IsString()
   @IsNotEmpty()
@@ -16,7 +16,7 @@ export class CreateRewardDto {
 
   @ApiProperty({
     description: '보상 설명',
-    example: '게임 내 골드 1000개를 제공합니다.',
+    example: '게임에서 사용 가능한 골드 500개',
   })
   @IsString()
   @IsNotEmpty()
@@ -24,27 +24,32 @@ export class CreateRewardDto {
 
   @ApiProperty({
     description: '보상 유형',
-    example: 'GAME_CURRENCY',
+    enum: RewardType,
+    example: RewardType.CURRENCY,
   })
-  @IsString()
-  @IsNotEmpty()
-  rewardType: string;
+  @IsEnum(RewardType)
+  type: RewardType;
 
   @ApiProperty({
     description: '보상 값',
-    example: '1000',
-  })
-  @IsNotEmpty()
-  rewardValue: string | number;
-
-  @ApiProperty({
-    description: '보상 수량 (-1: 무제한)',
-    example: 100,
-    default: -1,
+    example: 500,
   })
   @IsNumber()
-  @IsOptional()
-  quantity?: number = -1;
+  @Min(0)
+  value: number;
 
-  // eventId는 요청 URL 파라미터에서 추출하므로 DTO에 포함하지 않음
+  @ApiProperty({
+    description: '보상 수량',
+    example: 1,
+  })
+  @IsNumber()
+  @Min(1)
+  quantity: number;
+
+  @ApiProperty({
+    description: '관련 이벤트 ID',
+    example: '5f8f3a7e6b7b1c2a3c4b5a6e',
+  })
+  @IsMongoId()
+  eventId: string;
 }

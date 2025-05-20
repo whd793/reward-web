@@ -30,10 +30,11 @@ services:
     restart: always
     ports:
       - '3001:3001'
+      - '3004:3004' # Add HTTP port for auth service
     environment:
       - NODE_ENV=development
       - PORT=3001
-      - MONGODB_URI=mongodb+srv://root:root123@cluster0.77urvaw.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0
+      - MONGODB_URI=mongodb+srv://root:root123@cluster0.77urvaw.mongodb.net/reward-system?retryWrites=true&w=majority&appName=Cluster0
       - JWT_SECRET=verysecretkey123!nexon
       - JWT_EXPIRATION=1d
     networks:
@@ -47,10 +48,11 @@ services:
     restart: always
     ports:
       - '3002:3002'
+      - '3003:3003' # Add HTTP port for event service
     environment:
       - NODE_ENV=development
       - PORT=3002
-      - MONGODB_URI=mongodb+srv://root:root123@cluster0.77urvaw.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0
+      - MONGODB_URI=mongodb+srv://root:root123@cluster0.77urvaw.mongodb.net/reward-system?retryWrites=true&w=majority&appName=Cluster0
       - INNGEST_DEV=true
       - INNGEST_SIGNING_KEY=dev_inngest_signing_key
     networks:
@@ -91,17 +93,14 @@ networks:
 #       dockerfile: ./docker/auth/Dockerfile
 #     container_name: reward-system-auth
 #     restart: always
-#     # Note: For microservices using TCP, we expose the internal port
 #     ports:
 #       - '3001:3001'
 #     environment:
 #       - NODE_ENV=development
 #       - PORT=3001
-#       - MONGODB_URI=mongodb://root:root123@mongodb:27017/reward-system?authSource=admin
+#       - MONGODB_URI=mongodb+srv://root:root123@cluster0.77urvaw.mongodb.net/reward-system?retryWrites=true&w=majority&appName=Cluster0
 #       - JWT_SECRET=verysecretkey123!nexon
 #       - JWT_EXPIRATION=1d
-#     depends_on:
-#       - mongodb
 #     networks:
 #       - reward-network
 
@@ -111,124 +110,17 @@ networks:
 #       dockerfile: ./docker/event/Dockerfile
 #     container_name: reward-system-event
 #     restart: always
-#     # Note: For microservices using TCP, we expose the internal port
 #     ports:
 #       - '3002:3002'
 #     environment:
 #       - NODE_ENV=development
 #       - PORT=3002
-#       - MONGODB_URI=mongodb://root:root123@mongodb:27017/reward-system?authSource=admin
+#       - MONGODB_URI=mongodb+srv://root:root123@cluster0.77urvaw.mongodb.net/reward-system?retryWrites=true&w=majority&appName=Cluster0
 #       - INNGEST_DEV=true
 #       - INNGEST_SIGNING_KEY=dev_inngest_signing_key
-#     depends_on:
-#       - mongodb
-#     networks:
-#       - reward-network
-
-#   mongodb:
-#     image: mongo:5.0
-#     container_name: reward-system-mongodb
-#     restart: always
-#     environment:
-#       - MONGO_INITDB_ROOT_USERNAME=root
-#       - MONGO_INITDB_ROOT_PASSWORD=root123
-#       - MONGO_INITDB_DATABASE=reward-system
-#     ports:
-#       - '27017:27017'
-#     volumes:
-#       - mongodb_data:/data/db
-#       - ./docker/mongodb/init-mongo.js:/docker-entrypoint-initdb.d/init-mongo.js:ro
 #     networks:
 #       - reward-network
 
 # networks:
 #   reward-network:
 #     driver: bridge
-
-# volumes:
-#   mongodb_data:
-
-# version: '3.8'
-
-# services:
-#   mongodb:
-#     image: mongo:6.0
-#     container_name: reward-sys-mongodb
-#     restart: always
-#     ports:
-#       - '27017:27017'
-#     volumes:
-#       - mongodb_data:/data/db
-#       - ./docker/mongodb/init-mongo.js:/docker-entrypoint-initdb.d/init-mongo.js:ro
-#     environment:
-#       MONGO_INITDB_ROOT_USERNAME: admin
-#       MONGO_INITDB_ROOT_PASSWORD: password
-#       MONGO_INITDB_DATABASE: reward-sys
-#     networks:
-#       - reward-network
-
-#   gateway:
-#     build:
-#       context: .
-#       dockerfile: ./docker/gateway/Dockerfile
-#     container_name: reward-sys-gateway
-#     restart: always
-#     ports:
-#       - '3000:3000'
-#     environment:
-#       - NODE_ENV=development
-#       - AUTH_SERVICE_HOST=auth
-#       - AUTH_SERVICE_PORT=3001
-#       - EVENT_SERVICE_HOST=event
-#       - EVENT_SERVICE_PORT=3002
-#       - JWT_SECRET=supersecretkey
-#       - JWT_EXPIRATION=3600s
-#     depends_on:
-#       - mongodb
-#       - auth
-#       - event
-#     networks:
-#       - reward-network
-
-#   auth:
-#     build:
-#       context: .
-#       dockerfile: ./docker/auth/Dockerfile
-#     container_name: reward-sys-auth
-#     restart: always
-#     ports:
-#       - '3001:3001'
-#     environment:
-#       - NODE_ENV=development
-#       - MONGODB_URI=mongodb://admin:password@mongodb:27017/reward-sys?authSource=admin
-#       - JWT_SECRET=supersecretkey
-#       - JWT_EXPIRATION=3600s
-#     depends_on:
-#       - mongodb
-#     networks:
-#       - reward-network
-
-#   event:
-#     build:
-#       context: .
-#       dockerfile: ./docker/event/Dockerfile
-#     container_name: reward-sys-event
-#     restart: always
-#     ports:
-#       - '3002:3002'
-#     environment:
-#       - NODE_ENV=development
-#       - MONGODB_URI=mongodb://admin:password@mongodb:27017/reward-sys?authSource=admin
-#       - INNGEST_SIGNING_KEY=test-signing-key
-#       - EVENT_PROCESSING_ENABLED=true
-#     depends_on:
-#       - mongodb
-#     networks:
-#       - reward-network
-
-# networks:
-#   reward-network:
-#     driver: bridge
-
-# volumes:
-#   mongodb_data:

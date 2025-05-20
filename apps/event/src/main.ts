@@ -1,77 +1,40 @@
 import { NestFactory } from '@nestjs/core';
-import { Transport } from '@nestjs/microservices';
-import { Logger } from '@nestjs/common';
+import { Transport, MicroserviceOptions } from '@nestjs/microservices';
+import { Logger, ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
   const logger = new Logger('Event Service');
 
-  // Create a microservice only
-  const app = await NestFactory.createMicroservice(AppModule, {
-    transport: Transport.TCP,
-    options: {
-      host: '0.0.0.0',
-      port: 3002,
-    },
-  });
+  try {
+    // Create the microservice application
+    const app = await NestFactory.createMicroservice<MicroserviceOptions>(AppModule, {
+      transport: Transport.TCP,
+      options: {
+        host: '0.0.0.0',
+        port: 3002,
+      },
+    });
 
-  await app.listen();
-  logger.log('Event microservice is running on port 3002');
+    // Add global validation pipe
+    app.useGlobalPipes(
+      new ValidationPipe({
+        whitelist: true,
+        transform: true,
+        forbidNonWhitelisted: true,
+        transformOptions: {
+          enableImplicitConversion: true,
+        },
+      }),
+    );
+
+    // Start the microservice
+    await app.listen();
+    logger.log('Event microservice is listening on port 3002');
+  } catch (error) {
+    logger.error(`Failed to start event service: ${error.message}`, error.stack);
+    process.exit(1);
+  }
 }
+
 bootstrap();
-
-// import { NestFactory } from '@nestjs/core';
-// import { Transport } from '@nestjs/microservices';
-// import { Logger } from '@nestjs/common';
-// import { ConfigService } from '@nestjs/config';
-// import { AppModule } from './app.module';
-
-// async function bootstrap() {
-//   const logger = new Logger('Event Service');
-//   const app = await NestFactory.create(AppModule);
-//   const configService = app.get(ConfigService);
-
-//   const port = configService.get<number>('port') || 3002;
-
-//   // 마이크로서비스 설정
-//   app.connectMicroservice({
-//     transport: Transport.TCP,
-//     options: {
-//       host: '0.0.0.0',
-//       port,
-//     },
-//   });
-
-//   await app.startAllMicroservices();
-//   logger.log(`Event microservice is running on port ${port}`);
-// }
-
-// bootstrap();
-
-// import { NestFactory } from '@nestjs/core';
-// import { Transport } from '@nestjs/microservices';
-// import { Logger } from '@nestjs/common';
-// import { ConfigService } from '@nestjs/config';
-// import { AppModule } from './app.module';
-
-// async function bootstrap() {
-//   const logger = new Logger('Event Service');
-//   const app = await NestFactory.create(AppModule);
-//   const configService = app.get(ConfigService);
-
-//   const port = configService.get<number>('port');
-
-//   // 마이크로서비스 설정
-//   app.connectMicroservice({
-//     transport: Transport.TCP,
-//     options: {
-//       host: '0.0.0.0',
-//       port,
-//     },
-//   });
-
-//   await app.startAllMicroservices();
-//   logger.log(`Event microservice is running on port ${port}`);
-// }
-
-// bootstrap();

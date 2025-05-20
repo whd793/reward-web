@@ -1,54 +1,105 @@
-import { Controller } from '@nestjs/common';
+import { Controller, Get, Param, Logger } from '@nestjs/common';
 import { MessagePattern, Payload } from '@nestjs/microservices';
+import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { UsersService } from './users.service';
-import { CreateUserDto } from '../dto/create-user.dto';
 
 /**
  * 사용자 컨트롤러
- * 사용자 관련 메시지 패턴을 처리합니다.
  */
-@Controller()
+@ApiTags('users')
+@Controller('users')
 export class UsersController {
+  private readonly logger = new Logger(UsersController.name);
+
   constructor(private readonly usersService: UsersService) {}
 
   /**
    * 사용자명으로 사용자 조회
-   * @param payload 조회할 사용자명
-   * @returns 사용자 정보
    */
-  @MessagePattern('find_user_by_username')
-  async findByUsername(@Payload() payload: { username: string }) {
-    const user = await this.usersService.findOneByUsername(payload.username);
-    if (user) {
-      const result = user.toObject();
-      return result;
+  @Get('username/:username')
+  @ApiOperation({ summary: '사용자명으로 사용자 조회' })
+  @ApiResponse({ status: 200, description: '사용자 정보' })
+  @ApiResponse({ status: 404, description: '사용자를 찾을 수 없음' })
+  async findByUsername(@Param('username') username: string) {
+    this.logger.log(`Finding user by username: ${username}`);
+    const user = await this.usersService.findByUsername(username);
+    if (!user) {
+      return null;
     }
-    return null;
+
+    // Remove password from response
+    const userObj = user.toObject();
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { password, ...userWithoutPassword } = userObj;
+    return userWithoutPassword;
   }
 
   /**
-   * 새 사용자 생성
-   * @param createUserDto 사용자 생성 정보
-   * @returns 생성된 사용자 정보
+   * ID로 사용자 조회
    */
-  @MessagePattern('create_user')
-  async create(@Payload() createUserDto: CreateUserDto) {
-    return await this.usersService.create(createUserDto);
+  @Get(':id')
+  @ApiOperation({ summary: 'ID로 사용자 조회' })
+  @ApiResponse({ status: 200, description: '사용자 정보' })
+  @ApiResponse({ status: 404, description: '사용자를 찾을 수 없음' })
+  async findById(@Param('id') id: string) {
+    this.logger.log(`Finding user by ID: ${id}`);
+    const user = await this.usersService.findById(id);
+    if (!user) {
+      return null;
+    }
+
+    // Remove password from response
+    const userObj = user.toObject();
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { password, ...userWithoutPassword } = userObj;
+    return userWithoutPassword;
+  }
+
+  // ================ MICROSERVICE MESSAGE PATTERNS ================
+
+  /**
+   * 사용자명으로 사용자 조회 (마이크로서비스 패턴)
+   */
+  @MessagePattern('user.findByUsername')
+  async findUserByUsername(@Payload() username: string) {
+    this.logger.log(`[Microservice] Finding user by username: ${username}`);
+    try {
+      const user = await this.usersService.findByUsername(username);
+      if (!user) {
+        return null;
+      }
+
+      // Remove password from response
+      const userObj = user.toObject();
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { password, ...userWithoutPassword } = userObj;
+      return userWithoutPassword;
+    } catch (error) {
+      this.logger.error(`[Microservice] Error finding user by username: ${error.message}`);
+      throw error;
+    }
   }
 
   /**
-   * 사용자 ID로 사용자 조회
-   * @param payload 조회할 사용자 ID
-   * @returns 사용자 정보
+   * ID로 사용자 조회 (마이크로서비스 패턴)
    */
-  @MessagePattern('find_user_by_id')
-  async findById(@Payload() payload: { id: string }) {
-    const user = await this.usersService.findById(payload.id);
-    if (user) {
-      const result = user.toObject();
-      delete result.password;
-      return result;
+  @MessagePattern('user.findById')
+  async findUserById(@Payload() id: string) {
+    this.logger.log(`[Microservice] Finding user by ID: ${id}`);
+    try {
+      const user = await this.usersService.findById(id);
+      if (!user) {
+        throw new Error('User not found');
+      }
+
+      // Remove password from response
+      const userObj = user.toObject();
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { password, ...userWithoutPassword } = userObj;
+      return userWithoutPassword;
+    } catch (error) {
+      this.logger.error(`[Microservice] Error finding user by ID: ${error.message}`);
+      throw error;
     }
-    return null;
   }
 }

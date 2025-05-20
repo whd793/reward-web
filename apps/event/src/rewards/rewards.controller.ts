@@ -1,75 +1,208 @@
-import { Controller } from '@nestjs/common';
+import { Controller, Logger } from '@nestjs/common';
 import { MessagePattern, Payload } from '@nestjs/microservices';
 import { RewardsService } from './rewards.service';
 import { CreateRewardDto } from '../dto/create-reward.dto';
+import { RequestRewardDto } from '../dto/request-reward.dto';
+import { ClaimRewardDto } from '../dto/claim-reward.dto';
+import { UpdateRequestStatusDto } from '../dto/update-request-status.dto';
+import { PaginationDto } from '@app/common';
+import { RewardRequestStatus } from '../schemas/reward-request.schema';
 
 /**
- * 보상 컨트롤러
- * 보상 관련 메시지 패턴을 처리합니다.
+ * 보상 컨트롤러 (마이크로서비스용)
  */
 @Controller()
 export class RewardsController {
+  private readonly logger = new Logger(RewardsController.name);
+
   constructor(private readonly rewardsService: RewardsService) {}
 
   /**
-   * 이벤트별 보상 조회
-   * @param payload 이벤트 ID
-   * @returns 보상 목록
+   * 보상 생성 (마이크로서비스 패턴)
    */
-  @MessagePattern('get_event_rewards')
-  async getEventRewards(@Payload() payload: { eventId: string }) {
-    return await this.rewardsService.findByEventId(payload.eventId);
+  @MessagePattern('reward.create')
+  async createReward(@Payload() payload: { dto: CreateRewardDto; userId: string }) {
+    this.logger.log(`[Microservice] Creating reward: ${payload.dto.name}`);
+    try {
+      const result = await this.rewardsService.create(payload.dto, payload.userId);
+      this.logger.log(`[Microservice] Reward created successfully: ${result._id}`);
+      return result;
+    } catch (error) {
+      this.logger.error(`[Microservice] Error creating reward: ${error.message}`, error.stack);
+      throw error;
+    }
   }
 
   /**
-   * ID로 보상 조회
-   * @param payload 보상 ID
-   * @returns 보상 정보
+   * 모든 보상 조회 (마이크로서비스 패턴)
    */
-  @MessagePattern('find_reward_by_id')
-  async findById(@Payload() payload: { id: string }) {
-    return await this.rewardsService.findById(payload.id);
+  @MessagePattern('reward.findAll')
+  async findAllRewards(@Payload() paginationDto: PaginationDto) {
+    this.logger.log(`[Microservice] Finding all rewards`);
+    try {
+      const result = await this.rewardsService.findAll(paginationDto);
+      this.logger.log(
+        `[Microservice] Found ${result.data.length} rewards out of ${result.meta.total} total`,
+      );
+      return result;
+    } catch (error) {
+      this.logger.error(`[Microservice] Error finding all rewards: ${error.message}`, error.stack);
+      throw error;
+    }
   }
 
   /**
-   * 새 보상 생성
-   * @param payload 보상 생성 정보
-   * @returns 생성된 보상 정보
+   * 이벤트별 보상 조회 (마이크로서비스 패턴)
    */
-  @MessagePattern('create_reward')
-  async create(@Payload() payload: { eventId: string } & CreateRewardDto) {
-    const { eventId, ...createRewardDto } = payload;
-    return await this.rewardsService.create(eventId, createRewardDto);
+  @MessagePattern('reward.findByEventId')
+  async findRewardsByEventId(@Payload() eventId: string) {
+    this.logger.log(`[Microservice] Finding rewards for event: ${eventId}`);
+    try {
+      const result = await this.rewardsService.findByEventId(eventId);
+      this.logger.log(`[Microservice] Found ${result.length} rewards for event`);
+      return result;
+    } catch (error) {
+      this.logger.error(
+        `[Microservice] Error finding rewards by event ID: ${error.message}`,
+        error.stack,
+      );
+      throw error;
+    }
   }
 
   /**
-   * 보상 정보 업데이트
-   * @param payload 업데이트할 보상 정보
-   * @returns 업데이트된 보상 정보
+   * ID로 보상 조회 (마이크로서비스 패턴)
    */
-  @MessagePattern('update_reward')
-  async update(@Payload() payload: { id: string; [key: string]: any }) {
-    const { id, ...updateDto } = payload;
-    return await this.rewardsService.update(id, updateDto);
+  @MessagePattern('reward.findById')
+  async findRewardById(@Payload() id: string) {
+    this.logger.log(`[Microservice] Finding reward by ID: ${id}`);
+    try {
+      const result = await this.rewardsService.findById(id);
+      this.logger.log(`[Microservice] Found reward: ${result.name}`);
+      return result;
+    } catch (error) {
+      this.logger.error(`[Microservice] Error finding reward by ID: ${error.message}`, error.stack);
+      throw error;
+    }
   }
 
   /**
-   * 보상 삭제
-   * @param payload 보상 ID
-   * @returns 삭제 결과
+   * 보상 요청 (마이크로서비스 패턴)
    */
-  @MessagePattern('delete_reward')
-  async remove(@Payload() payload: { id: string }) {
-    return await this.rewardsService.remove(payload.id);
+  @MessagePattern('reward.request')
+  async requestReward(@Payload() payload: { dto: RequestRewardDto; userId: string }) {
+    this.logger.log(`[Microservice] User ${payload.userId} requesting reward`);
+    try {
+      const result = await this.rewardsService.requestReward(payload.dto, payload.userId);
+      this.logger.log(`[Microservice] Reward request created: ${result._id}`);
+      return result;
+    } catch (error) {
+      this.logger.error(`[Microservice] Error requesting reward: ${error.message}`, error.stack);
+      throw error;
+    }
   }
 
   /**
-   * 보상 수량 차감
-   * @param payload 보상 ID
-   * @returns 업데이트된 보상 정보
+   * 사용자별 보상 요청 조회 (마이크로서비스 패턴)
    */
-  @MessagePattern('decrement_reward_quantity')
-  async decrementQuantity(@Payload() payload: { id: string }) {
-    return await this.rewardsService.decrementQuantity(payload.id);
+  @MessagePattern('reward.getUserRequests')
+  async getUserRewardRequests(@Payload() payload: { dto: PaginationDto; userId: string }) {
+    this.logger.log(`[Microservice] Getting requests for user: ${payload.userId}`);
+    try {
+      const result = await this.rewardsService.getUserRequests(payload.userId, payload.dto);
+      this.logger.log(
+        `[Microservice] Found ${result.data.length} requests for user out of ${result.meta.total} total`,
+      );
+      return result;
+    } catch (error) {
+      this.logger.error(
+        `[Microservice] Error getting user requests: ${error.message}`,
+        error.stack,
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * 사용자별 대기 중인 보상 조회 (마이크로서비스 패턴)
+   */
+  @MessagePattern('reward.getPendingRewards')
+  async getPendingUserRewards(@Payload() userId: string) {
+    this.logger.log(`[Microservice] Getting pending rewards for user: ${userId}`);
+    try {
+      const result = await this.rewardsService.getPendingRewards(userId);
+      this.logger.log(`[Microservice] Found ${result.length} pending rewards for user`);
+      return result;
+    } catch (error) {
+      this.logger.error(
+        `[Microservice] Error getting pending rewards: ${error.message}`,
+        error.stack,
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * 보상 지급 완료 처리 (마이크로서비스 패턴)
+   */
+  @MessagePattern('reward.claim')
+  async claimUserReward(@Payload() payload: { id: string; dto: ClaimRewardDto; userId: string }) {
+    this.logger.log(`[Microservice] Claiming reward request: ${payload.id}`);
+    try {
+      const result = await this.rewardsService.claimReward(payload.id, payload.dto, payload.userId);
+      this.logger.log(`[Microservice] Reward claimed successfully`);
+      return result;
+    } catch (error) {
+      this.logger.error(`[Microservice] Error claiming reward: ${error.message}`, error.stack);
+      throw error;
+    }
+  }
+
+  /**
+   * 모든 보상 요청 조회 (마이크로서비스 패턴)
+   */
+  @MessagePattern('reward.getAllRequests')
+  async getAllRewardRequests(
+    @Payload() payload: { dto: PaginationDto; status?: RewardRequestStatus },
+  ) {
+    this.logger.log(`[Microservice] Getting all reward requests`);
+    try {
+      const result = await this.rewardsService.getAllRequests(payload.dto, payload.status);
+      this.logger.log(
+        `[Microservice] Found ${result.data.length} total requests out of ${result.meta.total} total`,
+      );
+      return result;
+    } catch (error) {
+      this.logger.error(`[Microservice] Error getting all requests: ${error.message}`, error.stack);
+      throw error;
+    }
+  }
+
+  /**
+   * 보상 요청 상태 업데이트 (마이크로서비스 패턴)
+   */
+  @MessagePattern('reward.adminUpdateRequestStatus')
+  async adminUpdateRewardRequestStatus(
+    @Payload() payload: { id: string; dto: UpdateRequestStatusDto; userId: string },
+  ) {
+    this.logger.log(
+      `[Microservice] Admin updating request status: ${payload.id} to ${payload.dto.status}`,
+    );
+    try {
+      const result = await this.rewardsService.adminUpdateRequestStatus(
+        payload.id,
+        payload.dto.status,
+        payload.dto.message,
+        payload.userId,
+      );
+      this.logger.log(`[Microservice] Request status updated successfully`);
+      return result;
+    } catch (error) {
+      this.logger.error(
+        `[Microservice] Error admin updating request status: ${error.message}`,
+        error.stack,
+      );
+      throw error;
+    }
   }
 }

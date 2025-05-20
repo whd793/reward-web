@@ -1,91 +1,77 @@
 import { ApiProperty } from '@nestjs/swagger';
-import {
-  IsString,
-  IsBoolean,
-  IsDateString,
-  IsNotEmpty,
-  IsOptional,
-  IsNumber,
-  Min,
-} from 'class-validator';
+import { IsString, IsNotEmpty, IsDate, IsEnum, IsObject, IsOptional } from 'class-validator';
+import { Type } from 'class-transformer';
+import { EventStatus, EventApprovalType } from '../schemas/event.schema';
+import { EventType } from '@app/common';
 
 /**
  * 이벤트 생성 DTO
- * 새 이벤트 생성 시 필요한 정보를 정의합니다.
  */
 export class CreateEventDto {
   @ApiProperty({
-    description: '이벤트 제목',
+    description: '이벤트 이름',
     example: '7일 연속 출석 이벤트',
   })
   @IsString()
   @IsNotEmpty()
-  title: string;
+  name: string;
 
   @ApiProperty({
     description: '이벤트 설명',
-    example: '7일 연속으로 로그인하면 보상을 지급합니다.',
+    example: '7일 연속으로 로그인하면 보상을 받을 수 있습니다.',
   })
   @IsString()
   @IsNotEmpty()
   description: string;
 
   @ApiProperty({
-    description: '이벤트 시작일',
-    example: '2025-01-01T00:00:00Z',
+    description: '이벤트 유형',
+    enum: EventType,
+    example: EventType.DAILY_LOGIN,
   })
-  @IsDateString()
-  @IsNotEmpty()
-  startDate: string;
+  @IsEnum(EventType)
+  eventType: EventType;
 
   @ApiProperty({
-    description: '이벤트 종료일',
-    example: '2025-12-31T23:59:59Z',
+    description: '이벤트 조건 (이벤트 유형에 따라 형식이 다름)',
+    example: { consecutiveDays: 7 },
   })
-  @IsDateString()
-  @IsNotEmpty()
-  endDate: string;
+  @IsObject()
+  condition: Record<string, any>;
 
   @ApiProperty({
-    description: '이벤트 활성화 여부',
-    example: true,
-    default: true,
+    description: '시작일',
+    example: '2025-01-01T00:00:00.000Z',
   })
-  @IsBoolean()
+  @IsDate()
+  @Type(() => Date)
+  startDate: Date;
+
+  @ApiProperty({
+    description: '종료일',
+    example: '2025-01-31T23:59:59.999Z',
+  })
+  @IsDate()
+  @Type(() => Date)
+  endDate: Date;
+
+  @ApiProperty({
+    description: '이벤트 상태',
+    enum: EventStatus,
+    default: EventStatus.ACTIVE,
+    required: false,
+  })
   @IsOptional()
-  isActive?: boolean = true;
+  @IsEnum(EventStatus)
+  status?: EventStatus = EventStatus.ACTIVE;
 
   @ApiProperty({
-    description: '운영자 승인 필요 여부',
-    example: false,
-    default: false,
+    description: '승인 유형',
+    enum: EventApprovalType,
+    default: EventApprovalType.AUTO,
+    required: false,
   })
-  @IsBoolean()
   @IsOptional()
-  requiresApproval?: boolean = false;
-
-  @ApiProperty({
-    description: '이벤트 조건 타입',
-    example: 'DAILY_LOGIN',
-  })
-  @IsString()
-  @IsNotEmpty()
-  conditionType: string;
-
-  @ApiProperty({
-    description: '이벤트 조건 값',
-    example: 7,
-  })
-  @IsNumber()
-  @Min(1)
-  @IsNotEmpty()
-  conditionValue: number;
-
-  @ApiProperty({
-    description: '이벤트 조건 설명',
-    example: '7일 연속 로그인',
-  })
-  @IsString()
-  @IsNotEmpty()
-  conditionDescription: string;
+  @IsEnum(EventApprovalType)
+  approvalType?: EventApprovalType = EventApprovalType.AUTO;
 }

@@ -1,60 +1,106 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
-import { Event, EventDocument } from '../schemas/event.schema';
+import { Event, EventDocument, EventStatus } from '../schemas/event.schema';
 import { CreateEventDto } from '../dto/create-event.dto';
-import { PaginationDto } from '@app/common';
+import { PaginationDto, createPaginatedResponse, PaginatedResponse } from '@app/common';
+import { EventLoggerService } from '../event-logger/event-logger.service';
+import { EventType } from '@app/common';
 
 /**
  * 이벤트 서비스
- * 이벤트 관련 비즈니스 로직을 처리합니다.
  */
 @Injectable()
 export class EventsService {
   private readonly logger = new Logger(EventsService.name);
 
-  constructor(@InjectModel(Event.name) private eventModel: Model<EventDocument>) {}
+  constructor(
+    @InjectModel(Event.name) private eventModel: Model<EventDocument>,
+    private readonly eventLoggerService: EventLoggerService,
+  ) {}
 
   /**
-   * 모든 이벤트 조회
-   * @param paginationDto 페이지네이션 정보
-   * @param filter 필터링 옵션
-   * @returns 이벤트 목록
+   * 이벤트 생성
    */
-  async findAll(paginationDto: PaginationDto, filter: any = {}) {
-    const { page = 1, limit = 10 } = paginationDto;
+  async create(createEventDto: CreateEventDto, userId: string): Promise<EventDocument> {
+    this.logger.log(`Creating event: ${createEventDto.name} by user ${userId}`);
+
+    const event = new this.eventModel({
+      ...createEventDto,
+      createdBy: userId,
+    });
+
+    return event.save();
+  }
+
+  /**
+   * 모든 이벤트 조회 (페이지네이션)
+   */
+  async findAll(paginationDto: PaginationDto): Promise<PaginatedResponse<EventDocument>> {
+    // Provide default values if not provided
+    const page = paginationDto?.page || 1;
+    const limit = paginationDto?.limit || 10;
     const skip = (page - 1) * limit;
 
-    const total = await this.eventModel.countDocuments(filter);
-    const events = await this.eventModel
-      .find(filter)
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limit)
-      .exec();
+    this.logger.log(`Finding all events with page: ${page}, limit: ${limit}, skip: ${skip}`);
 
-    return {
-      items: events,
-      meta: {
-        total,
-        page,
-        limit,
-        pages: Math.ceil(total / limit),
-      },
+    try {
+      const [events, total] = await Promise.all([
+        this.eventModel.find().sort({ createdAt: -1 }).skip(skip).limit(limit).exec(),
+        this.eventModel.countDocuments().exec(),
+      ]);
+
+      this.logger.log(`Found ${events.length} events out of ${total} total`);
+      return createPaginatedResponse(events, total, page, limit);
+    } catch (error) {
+      this.logger.error(`Error finding all events: ${error.message}`, error.stack);
+      throw error;
+    }
+  }
+
+  /**
+   * 활성 이벤트 조회 (페이지네이션)
+   */
+  async findActive(paginationDto: PaginationDto): Promise<PaginatedResponse<EventDocument>> {
+    const page = paginationDto?.page || 1;
+    const limit = paginationDto?.limit || 10;
+    const skip = (page - 1) * limit;
+    const now = new Date();
+
+    const query = {
+      status: EventStatus.ACTIVE,
+      startDate: { $lte: now },
+      endDate: { $gte: now },
     };
+
+    this.logger.log(`Finding active events with query: ${JSON.stringify(query)}`);
+
+    try {
+      const [events, total] = await Promise.all([
+        this.eventModel.find(query).sort({ endDate: 1 }).skip(skip).limit(limit).exec(),
+        this.eventModel.countDocuments(query).exec(),
+      ]);
+
+      this.logger.log(`Found ${events.length} active events out of ${total} total`);
+      return createPaginatedResponse(events, total, page, limit);
+    } catch (error) {
+      this.logger.error(`Error finding active events: ${error.message}`, error.stack);
+      throw error;
+    }
   }
 
   /**
    * ID로 이벤트 조회
-   * @param id 이벤트 ID
-   * @returns 이벤트 정보
    */
   async findById(id: string): Promise<EventDocument> {
-    if (!Types.ObjectId.isValid(id)) {
-      throw new BadRequestException('유효하지 않은 이벤트 ID입니다.');
+    const isValidId = Types.ObjectId.isValid(id);
+
+    if (!isValidId) {
+      throw new BadRequestException('잘못된 이벤트 ID 형식입니다.');
     }
 
     const event = await this.eventModel.findById(id).exec();
+
     if (!event) {
       throw new NotFoundException('이벤트를 찾을 수 없습니다.');
     }
@@ -63,154 +109,127 @@ export class EventsService {
   }
 
   /**
-   * 새 이벤트 생성
-   * @param createEventDto 이벤트 생성 정보
-   * @returns 생성된 이벤트 정보
+   * 이벤트 유형으로 이벤트 조회
    */
-  async create(createEventDto: CreateEventDto): Promise<EventDocument> {
-    const {
-      title,
-      description,
-      startDate,
-      endDate,
-      isActive,
-      requiresApproval,
-      conditionType,
-      conditionValue,
-      conditionDescription,
-    } = createEventDto;
+  async findByEventType(eventType: EventType): Promise<EventDocument[]> {
+    const now = new Date();
 
-    // 날짜 검증
-    const start = new Date(startDate);
-    const end = new Date(endDate);
+    return this.eventModel
+      .find({
+        eventType,
+        status: EventStatus.ACTIVE,
+        startDate: { $lte: now },
+        endDate: { $gte: now },
+      })
+      .exec();
+  }
 
-    if (end <= start) {
-      throw new BadRequestException('종료일은 시작일보다 나중이어야 합니다.');
-    }
+  /**
+   * 이벤트 상태 업데이트
+   */
+  async updateStatus(id: string, status: EventStatus, userId: string): Promise<EventDocument> {
+    const event = await this.findById(id);
 
-    const newEvent = new this.eventModel({
-      title,
-      description,
-      startDate: start,
-      endDate: end,
-      isActive: isActive !== undefined ? isActive : true,
-      requiresApproval: requiresApproval !== undefined ? requiresApproval : false,
-      conditionType,
-      conditionValue,
-      conditionDescription,
-    });
+    this.logger.log(`Updating event status: ${id} to ${status} by user ${userId}`);
 
-    try {
-      const savedEvent = await newEvent.save();
-      this.logger.log(`Event ${title} created successfully with ID: ${savedEvent._id}`);
-      return savedEvent;
-    } catch (error) {
-      this.logger.error(`Error creating event: ${error.message}`, error.stack);
-      throw error;
+    event.status = status;
+    return event.save();
+  }
+
+  /**
+   * 이벤트 조건 충족 여부 확인
+   */
+  async checkEventCondition(userId: string, event: EventDocument): Promise<boolean> {
+    this.logger.log(`Checking event condition for user ${userId}, event: ${event.name}`);
+
+    const { eventType, condition } = event;
+
+    switch (eventType) {
+      case EventType.DAILY_LOGIN:
+        return this.checkDailyLoginCondition(userId, condition);
+
+      case EventType.INVITE_FRIENDS:
+        return this.checkInviteFriendsCondition(userId, condition);
+
+      case EventType.QUEST_COMPLETE:
+        return this.checkQuestCompleteCondition(userId, condition);
+
+      case EventType.LEVEL_UP:
+        return this.checkLevelUpCondition(userId, condition);
+
+      case EventType.PROFILE_COMPLETE:
+        return this.checkProfileCompleteCondition(userId, condition);
+
+      default:
+        this.logger.warn(`Unsupported event type: ${eventType}`);
+        return false;
     }
   }
 
   /**
-   * 이벤트 정보 업데이트
-   * @param id 이벤트 ID
-   * @param updateEventDto 업데이트할 이벤트 정보
-   * @returns 업데이트된 이벤트 정보
+   * 일일 로그인 조건 확인
    */
-  async update(id: string, updateEventDto: Partial<CreateEventDto>): Promise<EventDocument> {
-    if (!Types.ObjectId.isValid(id)) {
-      throw new BadRequestException('유효하지 않은 이벤트 ID입니다.');
-    }
+  private async checkDailyLoginCondition(userId: string, condition: any): Promise<boolean> {
+    const consecutiveDays = await this.eventLoggerService.calculateConsecutiveEvents(
+      userId,
+      EventType.DAILY_LOGIN,
+    );
 
-    // 먼저 이벤트가 존재하는지 확인
-    const existingEvent = await this.findById(id);
-
-    // 날짜 검증 (업데이트하는 경우)
-    if (updateEventDto.startDate && updateEventDto.endDate) {
-      const start = new Date(updateEventDto.startDate);
-      const end = new Date(updateEventDto.endDate);
-
-      if (end <= start) {
-        throw new BadRequestException('종료일은 시작일보다 나중이어야 합니다.');
-      }
-    } else if (updateEventDto.startDate && !updateEventDto.endDate) {
-      const start = new Date(updateEventDto.startDate);
-      const end = existingEvent.endDate;
-
-      if (end <= start) {
-        throw new BadRequestException('종료일은 시작일보다 나중이어야 합니다.');
-      }
-    } else if (!updateEventDto.startDate && updateEventDto.endDate) {
-      const start = existingEvent.startDate;
-      const end = new Date(updateEventDto.endDate);
-
-      if (end <= start) {
-        throw new BadRequestException('종료일은 시작일보다 나중이어야 합니다.');
-      }
-    }
-
-    try {
-      const updatedEvent = await this.eventModel
-        .findByIdAndUpdate(id, updateEventDto, { new: true })
-        .exec();
-
-      if (!updatedEvent) {
-        throw new NotFoundException('이벤트를 찾을 수 없습니다.');
-      }
-
-      this.logger.log(`Event ${id} updated successfully`);
-      return updatedEvent;
-    } catch (error) {
-      this.logger.error(`Error updating event: ${error.message}`, error.stack);
-      throw error;
-    }
+    return consecutiveDays >= condition.consecutiveDays;
   }
 
   /**
-   * 이벤트 삭제
-   * @param id 이벤트 ID
-   * @returns 삭제 결과
+   * 친구 초대 조건 확인
    */
-  async remove(id: string): Promise<{ deleted: boolean }> {
-    if (!Types.ObjectId.isValid(id)) {
-      throw new BadRequestException('유효하지 않은 이벤트 ID입니다.');
-    }
+  private async checkInviteFriendsCondition(userId: string, condition: any): Promise<boolean> {
+    const logs = await this.eventLoggerService.getUserEventLogs(userId, EventType.INVITE_FRIENDS);
 
-    try {
-      const result = await this.eventModel.findByIdAndDelete(id).exec();
+    const invitedFriends = new Set(logs.map(log => log.data.invitedUserId));
 
-      if (!result) {
-        throw new NotFoundException('이벤트를 찾을 수 없습니다.');
-      }
-
-      this.logger.log(`Event ${id} deleted successfully`);
-      return { deleted: true };
-    } catch (error) {
-      this.logger.error(`Error deleting event: ${error.message}`, error.stack);
-      throw error;
-    }
+    return invitedFriends.size >= condition.friendCount;
   }
 
   /**
-   * 활성 이벤트 여부 확인
-   * @param eventId 이벤트 ID
-   * @returns 활성 여부 및 이벤트 정보
+   * 퀘스트 완료 조건 확인
    */
-  async isEventActive(
-    eventId: string,
-  ): Promise<{ isActive: boolean; event: EventDocument | null }> {
-    try {
-      const event = await this.findById(eventId);
-      const now = new Date();
+  private async checkQuestCompleteCondition(userId: string, condition: any): Promise<boolean> {
+    const logs = await this.eventLoggerService.getUserEventLogs(userId, EventType.QUEST_COMPLETE);
 
-      // 이벤트 활성 조건: isActive가 true이고, 현재 날짜가 시작일과 종료일 사이에 있어야 함
-      const isActive = event.isActive && now >= event.startDate && now <= event.endDate;
+    return logs.some(log => log.data.questId === condition.questId);
+  }
 
-      return { isActive, event };
-    } catch (error) {
-      if (error instanceof NotFoundException) {
-        return { isActive: false, event: null };
-      }
-      throw error;
+  /**
+   * 레벨업 조건 확인
+   */
+  private async checkLevelUpCondition(userId: string, condition: any): Promise<boolean> {
+    const logs = await this.eventLoggerService.getUserEventLogs(userId, EventType.LEVEL_UP);
+
+    if (logs.length === 0) {
+      return false;
     }
+
+    // 가장 최근 로그에서 현재 레벨 가져오기
+    const currentLevel = logs[0].data.newLevel;
+
+    return currentLevel >= condition.targetLevel;
+  }
+
+  /**
+   * 프로필 완성 조건 확인
+   */
+  private async checkProfileCompleteCondition(userId: string, condition: any): Promise<boolean> {
+    const logs = await this.eventLoggerService.getUserEventLogs(userId, EventType.PROFILE_COMPLETE);
+
+    if (logs.length === 0) {
+      return false;
+    }
+
+    // 가장 최근 로그에서 완성된 필드 가져오기
+    const completedFields = logs[0].data.completedFields || [];
+
+    // 필요한 모든 필드가 완성되었는지 확인
+    const requiredFields = condition.requiredFields || [];
+
+    return requiredFields.every(field => completedFields.includes(field));
   }
 }

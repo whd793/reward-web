@@ -1,8 +1,9 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
-    "sourceMap": true,
-    "inlineSources": true
+    "declaration": true,
+    "outDir": "../../dist/libs/common"
   },
-  "exclude": ["node_modules", "test", "**/*spec.ts"]
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist", "test", "**/*spec.ts"]
 }

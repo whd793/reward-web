@@ -1,13 +1,32 @@
-import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
-import { InjectModel } from '@nestjs/mongoose';
-import { Model, Types } from 'mongoose';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  ConflictException,
+  Logger,
+} from '@nestjs/common';
+import { InjectModel, InjectConnection } from '@nestjs/mongoose';
+import { Model, Connection, Types } from 'mongoose';
 import { Reward, RewardDocument } from '../schemas/reward.schema';
 import { CreateRewardDto } from '../dto/create-reward.dto';
+import {
+  RewardRequest,
+  RewardRequestDocument,
+  RewardRequestStatus,
+} from '../schemas/reward-request.schema';
+import { RequestRewardDto } from '../dto/request-reward.dto';
+import { ClaimRewardDto } from '../dto/claim-reward.dto';
 import { EventsService } from '../events/events.service';
+import { InngestClient } from '../inngest/inngest.client';
+import {
+  PaginationDto,
+  createPaginatedResponse,
+  PaginatedResponse,
+  IdempotencyUtil,
+} from '@app/common';
 
 /**
  * 보상 서비스
- * 보상 관련 비즈니스 로직을 처리합니다.
  */
 @Injectable()
 export class RewardsService {
@@ -15,36 +34,70 @@ export class RewardsService {
 
   constructor(
     @InjectModel(Reward.name) private rewardModel: Model<RewardDocument>,
+    @InjectModel(RewardRequest.name)
+    private rewardRequestModel: Model<RewardRequestDocument>,
+    @InjectConnection() private readonly connection: Connection,
     private readonly eventsService: EventsService,
+    private readonly inngestClient: InngestClient,
   ) {}
 
   /**
+   * 보상 생성
+   */
+  async create(createRewardDto: CreateRewardDto, userId: string): Promise<RewardDocument> {
+    this.logger.log(`Creating reward: ${createRewardDto.name} by user ${userId}`);
+
+    // 이벤트 존재 여부 확인
+    await this.eventsService.findById(createRewardDto.eventId);
+
+    const reward = new this.rewardModel({
+      ...createRewardDto,
+      createdBy: userId,
+    });
+
+    return reward.save();
+  }
+
+  /**
+   * 모든 보상 조회 (페이지네이션)
+   */
+  async findAll(paginationDto: PaginationDto): Promise<PaginatedResponse<RewardDocument>> {
+    const page = paginationDto?.page || 1;
+    const limit = paginationDto?.limit || 10;
+    const skip = (page - 1) * limit;
+
+    try {
+      const [rewards, total] = await Promise.all([
+        this.rewardModel.find().sort({ createdAt: -1 }).skip(skip).limit(limit).exec(),
+        this.rewardModel.countDocuments().exec(),
+      ]);
+
+      return createPaginatedResponse(rewards, total, page, limit);
+    } catch (error) {
+      this.logger.error(`Error finding all rewards: ${error.message}`, error.stack);
+      throw error;
+    }
+  }
+
+  /**
    * 이벤트별 보상 조회
-   * @param eventId 이벤트 ID
-   * @returns 보상 목록
    */
   async findByEventId(eventId: string): Promise<RewardDocument[]> {
-    if (!Types.ObjectId.isValid(eventId)) {
-      throw new BadRequestException('유효하지 않은 이벤트 ID입니다.');
-    }
-
-    // 먼저 이벤트가 존재하는지 확인
-    await this.eventsService.findById(eventId);
-
-    return this.rewardModel.find({ eventId: new Types.ObjectId(eventId) }).exec();
+    return this.rewardModel.find({ eventId }).exec();
   }
 
   /**
    * ID로 보상 조회
-   * @param id 보상 ID
-   * @returns 보상 정보
    */
   async findById(id: string): Promise<RewardDocument> {
-    if (!Types.ObjectId.isValid(id)) {
-      throw new BadRequestException('유효하지 않은 보상 ID입니다.');
+    const isValidId = Types.ObjectId.isValid(id);
+
+    if (!isValidId) {
+      throw new BadRequestException('잘못된 보상 ID 형식입니다.');
     }
 
     const reward = await this.rewardModel.findById(id).exec();
+
     if (!reward) {
       throw new NotFoundException('보상을 찾을 수 없습니다.');
     }
@@ -53,125 +106,289 @@ export class RewardsService {
   }
 
   /**
-   * 새 보상 생성
-   * @param eventId 이벤트 ID
-   * @param createRewardDto 보상 생성 정보
-   * @returns 생성된 보상 정보
+   * 보상 요청
    */
-  async create(eventId: string, createRewardDto: CreateRewardDto): Promise<RewardDocument> {
-    if (!Types.ObjectId.isValid(eventId)) {
-      throw new BadRequestException('유효하지 않은 이벤트 ID입니다.');
+  async requestReward(
+    requestRewardDto: RequestRewardDto,
+    userId: string,
+  ): Promise<RewardRequestDocument> {
+    this.logger.log(`User ${userId} requesting reward for event ${requestRewardDto.eventId}`);
+
+    const { eventId, rewardId, idempotencyKey } = requestRewardDto;
+
+    // 이벤트 및 보상 존재 여부 확인
+    const reward = await this.findById(rewardId);
+
+    // 보상이 해당 이벤트에 속하는지 확인
+    if (reward.eventId.toString() !== eventId) {
+      throw new BadRequestException('보상이 해당 이벤트에 속하지 않습니다.');
     }
 
-    // 먼저 이벤트가 존재하는지 확인
-    await this.eventsService.findById(eventId);
+    // 중복 요청 확인용 멱등성 키 생성
+    const requestKey =
+      idempotencyKey ||
+      IdempotencyUtil.generateKeyFromRequest(userId, 'reward_request', { eventId, rewardId });
 
-    const { name, description, rewardType, rewardValue, quantity } = createRewardDto;
+    // 중복 요청 확인
+    const existingRequest = await this.rewardRequestModel
+      .findOne({
+        userId,
+        eventId,
+        rewardId,
+        status: { $in: [RewardRequestStatus.PENDING, RewardRequestStatus.APPROVED] },
+      })
+      .exec();
 
-    const newReward = new this.rewardModel({
-      name,
-      description,
-      rewardType,
-      rewardValue,
-      quantity: quantity || -1, // 기본값은 무제한(-1)
-      eventId: new Types.ObjectId(eventId),
+    if (existingRequest) {
+      throw new ConflictException('이미 처리 중이거나 승인된 보상 요청이 있습니다.');
+    }
+
+    // 새 보상 요청 생성
+    const rewardRequest = new this.rewardRequestModel({
+      userId,
+      eventId,
+      rewardId,
+      status: RewardRequestStatus.PENDING,
+      idempotencyKey: requestKey,
     });
 
+    // 보상 요청 저장 및 처리 시작
+    const savedRequest = await rewardRequest.save();
+
+    // 백그라운드에서 보상 처리
+    await this.inngestClient.sendRewardProcessEvent(
+      savedRequest._id.toString(),
+      userId,
+      eventId,
+      rewardId,
+    );
+
+    return savedRequest;
+  }
+
+  /**
+   * 보상 요청 상태 조회
+   */
+  async getRequestStatus(requestId: string): Promise<RewardRequestDocument> {
+    const isValidId = Types.ObjectId.isValid(requestId);
+
+    if (!isValidId) {
+      throw new BadRequestException('잘못된 요청 ID 형식입니다.');
+    }
+
+    const request = await this.rewardRequestModel.findById(requestId).exec();
+
+    if (!request) {
+      throw new NotFoundException('보상 요청을 찾을 수 없습니다.');
+    }
+
+    return request;
+  }
+
+  /**
+   * 사용자별 보상 요청 조회 (페이지네이션)
+   */
+  async getUserRequests(
+    userId: string,
+    paginationDto: PaginationDto,
+  ): Promise<PaginatedResponse<RewardRequestDocument>> {
+    const page = paginationDto?.page || 1;
+    const limit = paginationDto?.limit || 10;
+    const skip = (page - 1) * limit;
+
     try {
-      const savedReward = await newReward.save();
-      this.logger.log(`Reward ${name} created successfully for event ${eventId}`);
-      return savedReward;
+      const [requests, total] = await Promise.all([
+        this.rewardRequestModel
+          .find({ userId })
+          .populate('eventId')
+          .populate('rewardId')
+          .sort({ createdAt: -1 })
+          .skip(skip)
+          .limit(limit)
+          .exec(),
+        this.rewardRequestModel.countDocuments({ userId }).exec(),
+      ]);
+
+      return createPaginatedResponse(requests, total, page, limit);
     } catch (error) {
-      this.logger.error(`Error creating reward: ${error.message}`, error.stack);
+      this.logger.error(`Error getting user requests: ${error.message}`, error.stack);
       throw error;
     }
   }
 
   /**
-   * 보상 정보 업데이트
-   * @param id 보상 ID
-   * @param updateRewardDto 업데이트할 보상 정보
-   * @returns 업데이트된 보상 정보
+   * 사용자별 대기 중인 보상 요청 조회
    */
-  async update(id: string, updateRewardDto: Partial<CreateRewardDto>): Promise<RewardDocument> {
-    if (!Types.ObjectId.isValid(id)) {
-      throw new BadRequestException('유효하지 않은 보상 ID입니다.');
+  async getPendingRewards(userId: string): Promise<RewardRequestDocument[]> {
+    return this.rewardRequestModel
+      .find({
+        userId,
+        status: RewardRequestStatus.APPROVED,
+        processedAt: { $exists: false },
+      })
+      .populate('eventId')
+      .populate('rewardId')
+      .sort({ createdAt: 1 })
+      .exec();
+  }
+
+  /**
+   * 보상 요청 상태 업데이트
+   */
+  async updateRequestStatus(
+    requestId: string,
+    status: RewardRequestStatus,
+    message?: string,
+    session?: any,
+  ): Promise<RewardRequestDocument> {
+    const isValidId = Types.ObjectId.isValid(requestId);
+
+    if (!isValidId) {
+      throw new BadRequestException('잘못된 요청 ID 형식입니다.');
     }
 
-    try {
-      const updatedReward = await this.rewardModel
-        .findByIdAndUpdate(id, updateRewardDto, { new: true })
-        .exec();
+    const options = session ? { session } : {};
 
-      if (!updatedReward) {
-        throw new NotFoundException('보상을 찾을 수 없습니다.');
+    const request = await this.rewardRequestModel.findById(requestId, null, options).exec();
+
+    if (!request) {
+      throw new NotFoundException('보상 요청을 찾을 수 없습니다.');
+    }
+
+    this.logger.log(`Updating request status: ${requestId} to ${status}`);
+
+    request.status = status;
+
+    if (message) {
+      request.message = message;
+    }
+
+    if (status === RewardRequestStatus.APPROVED || status === RewardRequestStatus.REJECTED) {
+      request.processedAt = new Date();
+    }
+
+    return request.save(options);
+  }
+
+  /**
+   * 보상 지급 완료 처리
+   */
+  async claimReward(
+    requestId: string,
+    claimRewardDto: ClaimRewardDto,
+    userId: string,
+  ): Promise<RewardRequestDocument> {
+    const { gameTransactionId, message } = claimRewardDto;
+
+    const session = await this.connection.startSession();
+    session.startTransaction();
+
+    try {
+      const request = await this.rewardRequestModel.findById(requestId).session(session).exec();
+
+      if (!request) {
+        throw new NotFoundException('보상 요청을 찾을 수 없습니다.');
       }
 
-      this.logger.log(`Reward ${id} updated successfully`);
-      return updatedReward;
+      // 요청이 APPROVED 상태인지 확인
+      if (request.status !== RewardRequestStatus.APPROVED) {
+        throw new BadRequestException('승인된 보상 요청만 처리할 수 있습니다.');
+      }
+
+      // 이미 처리되었는지 확인
+      if (request.processedBy) {
+        throw new ConflictException('이미 처리된 보상 요청입니다.');
+      }
+
+      this.logger.log(`Claim reward request: ${requestId} by user ${userId}`);
+
+      // 보상 지급 완료 기록
+      request.processedBy = userId;
+      request.message = message || `게임 트랜잭션 ID: ${gameTransactionId}`;
+      request.processedAt = new Date();
+
+      const savedRequest = await request.save({ session });
+
+      await session.commitTransaction();
+      return savedRequest;
     } catch (error) {
-      this.logger.error(`Error updating reward: ${error.message}`, error.stack);
+      await session.abortTransaction();
+      this.logger.error(`Failed to claim reward: ${error.message}`, error.stack);
       throw error;
+    } finally {
+      session.endSession();
     }
   }
 
   /**
-   * 보상 삭제
-   * @param id 보상 ID
-   * @returns 삭제 결과
+   * 관리자용 보상 요청 상태 업데이트
    */
-  async remove(id: string): Promise<{ deleted: boolean }> {
-    if (!Types.ObjectId.isValid(id)) {
-      throw new BadRequestException('유효하지 않은 보상 ID입니다.');
-    }
+  async adminUpdateRequestStatus(
+    requestId: string,
+    status: RewardRequestStatus,
+    message: string,
+    userId: string,
+  ): Promise<RewardRequestDocument> {
+    const session = await this.connection.startSession();
+    session.startTransaction();
 
     try {
-      const result = await this.rewardModel.findByIdAndDelete(id).exec();
+      const request = await this.rewardRequestModel.findById(requestId).session(session).exec();
 
-      if (!result) {
-        throw new NotFoundException('보상을 찾을 수 없습니다.');
+      if (!request) {
+        throw new NotFoundException('보상 요청을 찾을 수 없습니다.');
       }
 
-      this.logger.log(`Reward ${id} deleted successfully`);
-      return { deleted: true };
+      this.logger.log(`Admin updating request status: ${requestId} to ${status} by user ${userId}`);
+
+      request.status = status;
+      request.message = message || `관리자가 상태를 ${status}(으)로 변경함`;
+      request.processedBy = userId;
+      request.processedAt = new Date();
+
+      const savedRequest = await request.save({ session });
+
+      await session.commitTransaction();
+      return savedRequest;
     } catch (error) {
-      this.logger.error(`Error deleting reward: ${error.message}`, error.stack);
+      await session.abortTransaction();
+      this.logger.error(`Failed to update request status: ${error.message}`, error.stack);
       throw error;
+    } finally {
+      session.endSession();
     }
   }
 
   /**
-   * 보상 수량 차감
-   * @param id 보상 ID
-   * @returns 업데이트된 보상 정보
+   * 모든 보상 요청 조회 (페이지네이션, 관리자용)
    */
-  async decrementQuantity(id: string): Promise<RewardDocument> {
-    if (!Types.ObjectId.isValid(id)) {
-      throw new BadRequestException('유효하지 않은 보상 ID입니다.');
+  async getAllRequests(
+    paginationDto: PaginationDto,
+    status?: RewardRequestStatus,
+  ): Promise<PaginatedResponse<RewardRequestDocument>> {
+    const page = paginationDto?.page || 1;
+    const limit = paginationDto?.limit || 10;
+    const skip = (page - 1) * limit;
+
+    const query = status ? { status } : {};
+
+    try {
+      const [requests, total] = await Promise.all([
+        this.rewardRequestModel
+          .find(query)
+          .populate('eventId')
+          .populate('rewardId')
+          .sort({ createdAt: -1 })
+          .skip(skip)
+          .limit(limit)
+          .exec(),
+        this.rewardRequestModel.countDocuments(query).exec(),
+      ]);
+
+      return createPaginatedResponse(requests, total, page, limit);
+    } catch (error) {
+      this.logger.error(`Error getting all requests: ${error.message}`, error.stack);
+      throw error;
     }
-
-    const reward = await this.findById(id);
-
-    // 무제한 수량(-1)이 아니고, 남은 수량이 0이하면 에러
-    if (reward.quantity !== -1 && reward.quantity <= 0) {
-      throw new BadRequestException('보상 수량이 모두 소진되었습니다.');
-    }
-
-    // 무제한 수량(-1)이 아닌 경우에만 수량 차감
-    if (reward.quantity !== -1) {
-      try {
-        const updatedReward = await this.rewardModel
-          .findByIdAndUpdate(id, { $inc: { quantity: -1 } }, { new: true })
-          .exec();
-
-        this.logger.log(`Reward ${id} quantity decremented to ${updatedReward.quantity}`);
-        return updatedReward;
-      } catch (error) {
-        this.logger.error(`Error decrementing reward quantity: ${error.message}`, error.stack);
-        throw error;
-      }
-    }
-
-    return reward;
   }
 }

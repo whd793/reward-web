@@ -1,79 +1,33 @@
-// import { Module } from '@nestjs/common';
-// import { JwtModule } from '@nestjs/jwt';
-// import { ConfigModule, ConfigService } from '@nestjs/config';
-// import { AuthService } from './auth.service';
-// import { AuthController } from './auth.controller';
-// import { UsersModule } from '../users/users.module';
-
-// @Module({
-//   imports: [
-//     UsersModule,
-//     JwtModule.registerAsync({
-//       imports: [ConfigModule],
-//       useFactory: (configService: ConfigService) => ({
-//         secret: configService.get<string>('jwt.secret'),
-//         signOptions: {
-//           expiresIn: configService.get<string>('jwt.expiresIn'),
-//         },
-//       }),
-//       inject: [ConfigService],
-//     }),
-//   ],
-//   controllers: [AuthController],
-//   providers: [AuthService],
-//   exports: [AuthService],
-// })
-// export class AuthModule {}
-
-// import { Module } from '@nestjs/common';
-// import { AuthController } from './auth.controller';
-// import { ClientsModule, Transport } from '@nestjs/microservices';
-// import { ConfigModule, ConfigService } from '@nestjs/config';
-
-// @Module({
-//   imports: [
-//     ClientsModule.registerAsync([
-//       {
-//         name: 'AUTH_SERVICE',
-//         imports: [ConfigModule],
-//         inject: [ConfigService],
-//         useFactory: (configService: ConfigService) => ({
-//           transport: Transport.TCP,
-//           options: {
-//             host: configService.get('services.auth.host'),
-//             port: configService.get('services.auth.port'),
-//           },
-//         }),
-//       },
-//     ]),
-//   ],
-//   controllers: [AuthController],
-// })
-// export class AuthModule {}
-
 import { Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
+import { PassportModule } from '@nestjs/passport';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { UsersModule } from '../users/users.module';
+import { JwtStrategy } from '../strategies/jwt.strategy';
+import { LocalStrategy } from '../strategies/local.strategy';
 
+/**
+ * 인증 모듈
+ */
 @Module({
   imports: [
     UsersModule,
+    PassportModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
-      useFactory: (configService: ConfigService) => ({
+      inject: [ConfigService],
+      useFactory: async (configService: ConfigService) => ({
         secret: configService.get<string>('jwt.secret'),
         signOptions: {
           expiresIn: configService.get<string>('jwt.expiresIn'),
         },
       }),
-      inject: [ConfigService],
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService],
+  providers: [AuthService, JwtStrategy, LocalStrategy],
   exports: [AuthService],
 })
 export class AuthModule {}

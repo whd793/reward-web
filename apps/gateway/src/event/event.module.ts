@@ -3,6 +3,9 @@ import { EventController } from './event.controller';
 import { ClientsModule, Transport } from '@nestjs/microservices';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 
+/**
+ * 이벤트 모듈 (게이트웨이)
+ */
 @Module({
   imports: [
     ClientsModule.registerAsync([
@@ -23,11 +26,3 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
   controllers: [EventController],
 })
 export class EventModule {}
-
-// import { Module } from '@nestjs/common';
-// import { EventController } from './event.controller';
-
-// @Module({
-//   controllers: [EventController],
-// })
-// export class EventModule {}
