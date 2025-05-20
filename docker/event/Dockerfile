@@ -1,32 +1,56 @@
-FROM node:18-alpine AS builder
+FROM node:18-alpine AS development
 
-WORKDIR /app
+WORKDIR /usr/src/app
 
-# Copy the entire project
-COPY . .
-
-# Install all dependencies
-RUN npm install --legacy-peer-deps
-
-# Build the event application
-RUN npx nest build event
-
-FROM node:18-alpine
-
-WORKDIR /app
-
-# Copy package files
 COPY package*.json ./
 
-# Install only production dependencies
-RUN npm install --production --legacy-peer-deps
+RUN npm install
 
-# Copy the entire dist directory
-COPY --from=builder /app/dist ./dist
+COPY . .
 
-USER node
+RUN npm run build event
 
-EXPOSE 3002
+FROM node:18-alpine AS production
 
-# Use the correct path to the main.js file
-CMD ["node", "dist/apps/event/apps/event/src/main.js"]
+ARG NODE_ENV=production
+ENV NODE_ENV=${NODE_ENV}
+
+WORKDIR /usr/src/app
+
+COPY package*.json ./
+
+RUN npm install --only=production
+
+COPY --from=development /usr/src/app/dist ./dist
+COPY --from=development /usr/src/app/node_modules ./node_modules
+
+CMD ["node", "dist/apps/event/main"]
+
+# FROM node:18-alpine As development
+
+# WORKDIR /usr/src/app
+
+# COPY package*.json ./
+
+# RUN npm install
+
+# COPY . .
+
+# RUN npm run build event
+
+# FROM node:18-alpine As production
+
+# ARG NODE_ENV=production
+# ENV NODE_ENV=${NODE_ENV}
+
+# WORKDIR /usr/src/app
+
+# COPY package*.json ./
+
+# RUN npm install --only=production
+
+# COPY . .
+
+# COPY --from=development /usr/src/app/dist ./dist
+
+# CMD ["node", "dist/apps/event/main"]

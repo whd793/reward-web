@@ -3,9 +3,6 @@ import { AuthController } from './auth.controller';
 import { ClientsModule, Transport } from '@nestjs/microservices';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 
-/**
- * 인증 모듈 (게이트웨이)
- */
 @Module({
   imports: [
     ClientsModule.registerAsync([
@@ -26,3 +23,11 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
   controllers: [AuthController],
 })
 export class AuthModule {}
+
+// import { Module } from '@nestjs/common';
+// import { AuthController } from './auth.controller';
+
+// @Module({
+//   controllers: [AuthController],
+// })
+// export class AuthModule {}

@@ -1,124 +1,75 @@
-import {
-  Controller,
-  Get,
-  Post,
-  Body,
-  Param,
-  Query,
-  Patch,
-  Logger,
-  // UseGuards,
-  Request,
-} from '@nestjs/common';
+import { Controller } from '@nestjs/common';
 import { MessagePattern, Payload } from '@nestjs/microservices';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { EventsService } from './events.service';
 import { CreateEventDto } from '../dto/create-event.dto';
-import { PaginationDto } from '@app/common';
-import { EventStatus } from '../schemas/event.schema';
-import { Role } from '@app/common';
-import { Roles } from '../decorators/roles.decorator';
 
 /**
  * 이벤트 컨트롤러
+ * 이벤트 관련 메시지 패턴을 처리합니다.
  */
-@ApiTags('events')
-@Controller('events')
+@Controller()
 export class EventsController {
-  private readonly logger = new Logger(EventsController.name);
-
   constructor(private readonly eventsService: EventsService) {}
 
   /**
-   * 이벤트 생성 (운영자/관리자 전용)
+   * 모든 이벤트 조회
+   * @param payload 조회 옵션
+   * @returns 이벤트 목록
    */
-  @Post()
-  @ApiOperation({ summary: '이벤트 생성 (운영자/관리자 전용)' })
-  @ApiBearerAuth()
-  @Roles(Role.OPERATOR, Role.ADMIN)
-  @ApiResponse({ status: 201, description: '이벤트가 성공적으로 생성됨' })
-  @ApiResponse({ status: 400, description: '잘못된 입력' })
-  @ApiResponse({ status: 401, description: '인증 실패' })
-  @ApiResponse({ status: 403, description: '권한 없음' })
-  async create(@Body() createEventDto: CreateEventDto, @Request() req) {
-    this.logger.log(`Creating event: ${createEventDto.name}`);
-    return this.eventsService.create(createEventDto, req.user.userId);
-  }
-
-  /**
-   * 모든 이벤트 조회 (운영자/관리자/감사자 전용)
-   */
-  @Get()
-  @ApiOperation({ summary: '모든 이벤트 조회 (운영자/관리자/감사자 전용)' })
-  @ApiBearerAuth()
-  @Roles(Role.OPERATOR, Role.ADMIN, Role.AUDITOR)
-  @ApiResponse({ status: 200, description: '이벤트 목록' })
-  @ApiResponse({ status: 401, description: '인증 실패' })
-  @ApiResponse({ status: 403, description: '권한 없음' })
-  async findAll(@Query() paginationDto: PaginationDto) {
-    this.logger.log('Finding all events');
-    return this.eventsService.findAll(paginationDto);
-  }
-
-  /**
-   * 활성 이벤트 조회
-   */
-  @Get('active')
-  @ApiOperation({ summary: '활성 이벤트 조회' })
-  @ApiResponse({ status: 200, description: '활성 이벤트 목록' })
-  async findActive(@Query() paginationDto: PaginationDto) {
-    this.logger.log('Finding active events');
-    return this.eventsService.findActive(paginationDto);
+  @MessagePattern('find_all_events')
+  async findAll(@Payload() payload: any) {
+    const { page, limit, ...filter } = payload || {};
+    return await this.eventsService.findAll({ page, limit }, filter);
   }
 
   /**
    * ID로 이벤트 조회
+   * @param payload 이벤트 ID
+   * @returns 이벤트 정보
    */
-  @Get(':id')
-  @ApiOperation({ summary: 'ID로 이벤트 조회' })
-  @ApiResponse({ status: 200, description: '이벤트 정보' })
-  @ApiResponse({ status: 404, description: '이벤트를 찾을 수 없음' })
-  async findOne(@Param('id') id: string) {
-    this.logger.log(`Finding event by ID: ${id}`);
-    return this.eventsService.findById(id);
+  @MessagePattern('find_event_by_id')
+  async findById(@Payload() payload: { id: string }) {
+    return await this.eventsService.findById(payload.id);
   }
 
   /**
-   * 이벤트 상태 업데이트 (운영자/관리자 전용)
+   * 새 이벤트 생성
+   * @param payload 이벤트 생성 정보
+   * @returns 생성된 이벤트 정보
    */
-  @Patch(':id/status')
-  @ApiOperation({ summary: '이벤트 상태 업데이트 (운영자/관리자 전용)' })
-  @ApiBearerAuth()
-  @Roles(Role.OPERATOR, Role.ADMIN)
-  @ApiResponse({ status: 200, description: '이벤트 상태가 업데이트됨' })
-  @ApiResponse({ status: 400, description: '잘못된 입력' })
-  @ApiResponse({ status: 401, description: '인증 실패' })
-  @ApiResponse({ status: 403, description: '권한 없음' })
-  @ApiResponse({ status: 404, description: '이벤트를 찾을 수 없음' })
-  async updateStatus(@Param('id') id: string, @Body('status') status: EventStatus, @Request() req) {
-    this.logger.log(`Updating event status: ${id} to ${status}`);
-    return this.eventsService.updateStatus(id, status, req.user.userId);
+  @MessagePattern('create_event')
+  async create(@Payload() payload: CreateEventDto) {
+    return await this.eventsService.create(payload);
   }
 
   /**
-   * ID로 이벤트 조회 (마이크로서비스 내부 통신용)
+   * 이벤트 정보 업데이트
+   * @param payload 업데이트할 이벤트 정보
+   * @returns 업데이트된 이벤트 정보
    */
-  @MessagePattern('event.findById')
-  async findById(@Payload() id: string) {
-    this.logger.log(`[Microservice] Finding event by ID: ${id}`);
-    return this.eventsService.findById(id);
+  @MessagePattern('update_event')
+  async update(@Payload() payload: { id: string; [key: string]: any }) {
+    const { id, ...updateDto } = payload;
+    return await this.eventsService.update(id, updateDto);
   }
 
   /**
-   * 이벤트 조건 확인 (마이크로서비스 내부 통신용)
+   * 이벤트 삭제
+   * @param payload 이벤트 ID
+   * @returns 삭제 결과
    */
-  @MessagePattern('event.checkCondition')
-  async checkCondition(@Payload() data: { userId: string; eventId: string }) {
-    this.logger.log(
-      `[Microservice] Checking event condition for user ${data.userId}, event: ${data.eventId}`,
-    );
+  @MessagePattern('delete_event')
+  async remove(@Payload() payload: { id: string }) {
+    return await this.eventsService.remove(payload.id);
+  }
 
-    const event = await this.eventsService.findById(data.eventId);
-    return this.eventsService.checkEventCondition(data.userId, event);
+  /**
+   * 이벤트 활성 여부 확인
+   * @param payload 이벤트 ID
+   * @returns 활성 여부
+   */
+  @MessagePattern('is_event_active')
+  async isEventActive(@Payload() payload: { eventId: string }) {
+    return await this.eventsService.isEventActive(payload.eventId);
   }
 }

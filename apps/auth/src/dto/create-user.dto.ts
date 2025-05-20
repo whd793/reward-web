@@ -1,39 +1,33 @@
 import { ApiProperty } from '@nestjs/swagger';
 import {
-  IsEmail,
   IsString,
+  IsEmail,
   IsNotEmpty,
   MinLength,
+  MaxLength,
   IsArray,
-  IsEnum,
   IsOptional,
 } from 'class-validator';
 import { Role } from '@app/common';
 
 /**
  * 사용자 생성 DTO
+ * 새 사용자 등록 시 필요한 정보를 정의합니다.
  */
 export class CreateUserDto {
   @ApiProperty({
-    description: '사용자명',
-    example: 'user123',
+    description: '사용자 아이디',
+    example: 'johndoe',
   })
   @IsString()
   @IsNotEmpty()
-  @MinLength(3)
+  @MinLength(4)
+  @MaxLength(20)
   username: string;
 
   @ApiProperty({
-    description: '이메일',
-    example: 'user@example.com',
-  })
-  @IsEmail()
-  @IsNotEmpty()
-  email: string;
-
-  @ApiProperty({
     description: '비밀번호',
-    example: 'password123',
+    example: 'StrongPassword123!',
   })
   @IsString()
   @IsNotEmpty()
@@ -41,14 +35,21 @@ export class CreateUserDto {
   password: string;
 
   @ApiProperty({
-    description: '역할 (관리자만 지정 가능)',
+    description: '이메일 주소',
+    example: 'john.doe@example.com',
+  })
+  @IsEmail()
+  @IsNotEmpty()
+  email: string;
+
+  @ApiProperty({
+    description: '사용자 역할 (기본값: USER)',
     enum: Role,
+    default: [Role.USER],
     isArray: true,
     required: false,
-    example: [Role.USER],
   })
-  @IsOptional()
   @IsArray()
-  @IsEnum(Role, { each: true })
-  roles?: Role[];
+  @IsOptional()
+  roles?: Role[] = [Role.USER];
 }

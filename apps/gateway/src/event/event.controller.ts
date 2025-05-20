@@ -2,296 +2,207 @@ import {
   Controller,
   Get,
   Post,
+  Put,
+  Delete,
   Body,
   Param,
   Query,
-  Patch,
-  Logger,
   Inject,
-  Request,
+  // UseGuards,
 } from '@nestjs/common';
 import { ClientProxy } from '@nestjs/microservices';
 import { firstValueFrom } from 'rxjs';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
-import { Role } from '@app/common';
 import { Roles } from '../decorators/roles.decorator';
+import { Role } from '@app/common';
 
-/**
- * 이벤트 컨트롤러 (게이트웨이)
- */
-@ApiTags('events')
+@ApiTags('이벤트 및 보상')
 @Controller('events')
+@ApiBearerAuth()
 export class EventController {
-  private readonly logger = new Logger(EventController.name);
-
-  constructor(@Inject('EVENT_SERVICE') private eventClient: ClientProxy) {}
+  constructor(@Inject('EVENT_SERVICE') private readonly eventClient: ClientProxy) {}
 
   /**
-   * 이벤트 생성 (운영자/관리자 전용)
-   */
-  @Post()
-  @ApiOperation({ summary: '이벤트 생성 (운영자/관리자 전용)' })
-  @ApiBearerAuth()
-  @Roles(Role.OPERATOR, Role.ADMIN)
-  @ApiResponse({ status: 201, description: '이벤트가 성공적으로 생성됨' })
-  @ApiResponse({ status: 400, description: '잘못된 입력' })
-  @ApiResponse({ status: 401, description: '인증 실패' })
-  @ApiResponse({ status: 403, description: '권한 없음' })
-  async create(@Body() createEventDto: any, @Request() req) {
-    this.logger.log(`Creating event: ${createEventDto.name}`);
-
-    return firstValueFrom(
-      this.eventClient.send('event.create', {
-        dto: createEventDto,
-        userId: req.user.userId,
-      }),
-    );
-  }
-
-  /**
-   * 모든 이벤트 조회 (운영자/관리자/감사자 전용)
+   * 모든 이벤트 조회
+   * @param query 페이지네이션 및 필터링 옵션
+   * @returns 이벤트 목록
    */
   @Get()
-  @ApiOperation({ summary: '모든 이벤트 조회 (운영자/관리자/감사자 전용)' })
-  @ApiBearerAuth()
-  @Roles(Role.OPERATOR, Role.ADMIN, Role.AUDITOR)
-  @ApiResponse({ status: 200, description: '이벤트 목록' })
-  @ApiResponse({ status: 401, description: '인증 실패' })
-  @ApiResponse({ status: 403, description: '권한 없음' })
-  async findAll(@Query() paginationDto: any) {
-    this.logger.log('Finding all events');
-
-    return firstValueFrom(this.eventClient.send('event.findAll', paginationDto));
+  @ApiOperation({ summary: '이벤트 목록 조회', description: '모든 활성 이벤트를 조회합니다.' })
+  @ApiResponse({ status: 200, description: '이벤트 목록이 성공적으로 조회되었습니다.' })
+  async findAllEvents(@Query() query: any) {
+    return await firstValueFrom(this.eventClient.send('find_all_events', query));
   }
 
   /**
-   * 활성 이벤트 조회
-   */
-  @Get('active')
-  @ApiOperation({ summary: '활성 이벤트 조회' })
-  @ApiResponse({ status: 200, description: '활성 이벤트 목록' })
-  async findActive(@Query() paginationDto: any) {
-    this.logger.log('Finding active events');
-
-    return firstValueFrom(this.eventClient.send('event.findActive', paginationDto));
-  }
-
-  /**
-   * ID로 이벤트 조회
+   * 특정 이벤트 조회
+   * @param id 이벤트 ID
+   * @returns 이벤트 정보
    */
   @Get(':id')
-  @ApiOperation({ summary: 'ID로 이벤트 조회' })
-  @ApiResponse({ status: 200, description: '이벤트 정보' })
-  @ApiResponse({ status: 404, description: '이벤트를 찾을 수 없음' })
-  async findOne(@Param('id') id: string) {
-    this.logger.log(`Finding event by ID: ${id}`);
-
-    return firstValueFrom(this.eventClient.send('event.findById', id));
+  @ApiOperation({
+    summary: '이벤트 상세 조회',
+    description: '특정 이벤트의 상세 정보를 조회합니다.',
+  })
+  @ApiResponse({ status: 200, description: '이벤트가 성공적으로 조회되었습니다.' })
+  @ApiResponse({ status: 404, description: '이벤트를 찾을 수 없습니다.' })
+  async findEventById(@Param('id') id: string) {
+    return await firstValueFrom(this.eventClient.send('find_event_by_id', { id }));
   }
 
   /**
-   * 이벤트 상태 업데이트 (운영자/관리자 전용)
+   * 새 이벤트 생성
+   * @param createEventDto 이벤트 생성 정보
+   * @returns 생성된 이벤트 정보
    */
-  @Patch(':id/status')
-  @ApiOperation({ summary: '이벤트 상태 업데이트 (운영자/관리자 전용)' })
-  @ApiBearerAuth()
-  @Roles(Role.OPERATOR, Role.ADMIN)
-  @ApiResponse({ status: 200, description: '이벤트 상태가 업데이트됨' })
-  @ApiResponse({ status: 400, description: '잘못된 입력' })
-  @ApiResponse({ status: 401, description: '인증 실패' })
-  @ApiResponse({ status: 403, description: '권한 없음' })
-  @ApiResponse({ status: 404, description: '이벤트를 찾을 수 없음' })
-  async updateStatus(@Param('id') id: string, @Body('status') status: string, @Request() req) {
-    this.logger.log(`Updating event status: ${id} to ${status}`);
-
-    return firstValueFrom(
-      this.eventClient.send('event.updateStatus', {
-        id,
-        status,
-        userId: req.user.userId,
-      }),
-    );
+  @Post()
+  @Roles(Role.ADMIN, Role.OPERATOR)
+  @ApiOperation({ summary: '이벤트 생성', description: '새로운 이벤트를 생성합니다.' })
+  @ApiResponse({ status: 201, description: '이벤트가 성공적으로 생성되었습니다.' })
+  @ApiResponse({ status: 400, description: '이벤트 정보가 유효하지 않습니다.' })
+  async createEvent(@Body() createEventDto: any) {
+    return await firstValueFrom(this.eventClient.send('create_event', createEventDto));
   }
 
   /**
-   * 보상 생성 (운영자/관리자 전용)
+   * 이벤트 정보 업데이트
+   * @param id 이벤트 ID
+   * @param updateEventDto 업데이트할 이벤트 정보
+   * @returns 업데이트된 이벤트 정보
    */
-  @Post('rewards')
-  @ApiOperation({ summary: '보상 생성 (운영자/관리자 전용)' })
-  @ApiBearerAuth()
-  @Roles(Role.OPERATOR, Role.ADMIN)
-  @ApiResponse({ status: 201, description: '보상이 성공적으로 생성됨' })
-  @ApiResponse({ status: 400, description: '잘못된 입력' })
-  @ApiResponse({ status: 401, description: '인증 실패' })
-  @ApiResponse({ status: 403, description: '권한 없음' })
-  async createReward(@Body() createRewardDto: any, @Request() req) {
-    this.logger.log(`Creating reward: ${createRewardDto.name}`);
-
-    return firstValueFrom(
-      this.eventClient.send('reward.create', {
-        dto: createRewardDto,
-        userId: req.user.userId,
-      }),
-    );
+  @Put(':id')
+  @Roles(Role.ADMIN, Role.OPERATOR)
+  @ApiOperation({ summary: '이벤트 수정', description: '기존 이벤트의 정보를 수정합니다.' })
+  @ApiResponse({ status: 200, description: '이벤트가 성공적으로 수정되었습니다.' })
+  @ApiResponse({ status: 404, description: '이벤트를 찾을 수 없습니다.' })
+  async updateEvent(@Param('id') id: string, @Body() updateEventDto: any) {
+    return await firstValueFrom(this.eventClient.send('update_event', { id, ...updateEventDto }));
   }
 
   /**
-   * 이벤트별 보상 조회
+   * 이벤트 삭제
+   * @param id 이벤트 ID
+   * @returns 삭제 결과
+   */
+  @Delete(':id')
+  @Roles(Role.ADMIN)
+  @ApiOperation({ summary: '이벤트 삭제', description: '이벤트를 삭제합니다.' })
+  @ApiResponse({ status: 200, description: '이벤트가 성공적으로 삭제되었습니다.' })
+  @ApiResponse({ status: 404, description: '이벤트를 찾을 수 없습니다.' })
+  async deleteEvent(@Param('id') id: string) {
+    return await firstValueFrom(this.eventClient.send('delete_event', { id }));
+  }
+
+  /**
+   * 이벤트 보상 정보 조회
+   * @param id 이벤트 ID
+   * @returns 보상 목록
    */
   @Get(':id/rewards')
-  @ApiOperation({ summary: '이벤트별 보상 조회' })
-  @ApiResponse({ status: 200, description: '보상 목록' })
-  @ApiResponse({ status: 404, description: '이벤트를 찾을 수 없음' })
-  async findRewardsByEventId(@Param('id') id: string) {
-    this.logger.log(`Finding rewards for event: ${id}`);
+  @ApiOperation({
+    summary: '이벤트 보상 조회',
+    description: '특정 이벤트의 보상 정보를 조회합니다.',
+  })
+  @ApiResponse({ status: 200, description: '보상 정보가 성공적으로 조회되었습니다.' })
+  async getEventRewards(@Param('id') id: string) {
+    return await firstValueFrom(this.eventClient.send('get_event_rewards', { eventId: id }));
+  }
 
-    return firstValueFrom(this.eventClient.send('reward.findByEventId', id));
+  /**
+   * 이벤트에 새 보상 추가
+   * @param id 이벤트 ID
+   * @param createRewardDto 보상 생성 정보
+   * @returns 생성된 보상 정보
+   */
+  @Post(':id/rewards')
+  @Roles(Role.ADMIN, Role.OPERATOR)
+  @ApiOperation({ summary: '보상 생성', description: '이벤트에 새 보상을 추가합니다.' })
+  @ApiResponse({ status: 201, description: '보상이 성공적으로 생성되었습니다.' })
+  async createReward(@Param('id') id: string, @Body() createRewardDto: any) {
+    return await firstValueFrom(
+      this.eventClient.send('create_reward', { eventId: id, ...createRewardDto }),
+    );
   }
 
   /**
    * 보상 요청
+   * @param eventId 이벤트 ID
+   * @param requestRewardDto 보상 요청 정보
+   * @returns 보상 요청 결과
    */
-  @Post('rewards/request')
-  @ApiOperation({ summary: '보상 요청' })
-  @ApiBearerAuth()
-  @ApiResponse({ status: 201, description: '보상 요청이 생성됨' })
-  @ApiResponse({ status: 400, description: '잘못된 입력' })
-  @ApiResponse({ status: 401, description: '인증 실패' })
-  @ApiResponse({ status: 409, description: '중복 요청' })
-  async requestReward(@Body() requestRewardDto: any, @Request() req) {
-    this.logger.log(`User ${req.user.userId} requesting reward`);
-
-    return firstValueFrom(
-      this.eventClient.send('reward.request', {
-        dto: requestRewardDto,
-        userId: req.user.userId,
-      }),
+  @Post(':id/request-reward')
+  @Roles(Role.USER, Role.ADMIN)
+  @ApiOperation({ summary: '보상 요청', description: '사용자가 이벤트 보상을 요청합니다.' })
+  @ApiResponse({ status: 201, description: '보상 요청이 성공적으로 처리되었습니다.' })
+  async requestReward(@Param('id') eventId: string, @Body() requestRewardDto: any) {
+    return await firstValueFrom(
+      this.eventClient.send('request_reward', { eventId, ...requestRewardDto }),
     );
   }
 
   /**
-   * 사용자별 보상 요청 조회
+   * 사용자의 보상 요청 이력 조회
+   * @returns 보상 요청 이력
    */
-  @Get('rewards/user/requests')
-  @ApiOperation({ summary: '사용자별 보상 요청 조회' })
-  @ApiBearerAuth()
-  @ApiResponse({ status: 200, description: '보상 요청 목록' })
-  @ApiResponse({ status: 401, description: '인증 실패' })
-  async getUserRequests(@Query() paginationDto: any, @Request() req) {
-    this.logger.log(`Getting requests for user: ${req.user.userId}`);
-
-    return firstValueFrom(
-      this.eventClient.send('reward.getUserRequests', {
-        dto: paginationDto,
-        userId: req.user.userId,
-      }),
-    );
+  @Get('user/reward-requests')
+  @Roles(Role.USER, Role.ADMIN)
+  @ApiOperation({
+    summary: '사용자 보상 요청 이력',
+    description: '로그인한 사용자의 보상 요청 이력을 조회합니다.',
+  })
+  @ApiResponse({ status: 200, description: '보상 요청 이력이 성공적으로 조회되었습니다.' })
+  async getUserRewardRequests(@Query() query: any) {
+    return await firstValueFrom(this.eventClient.send('get_user_reward_requests', query));
   }
 
   /**
-   * 사용자별 대기 중인 보상 조회
+   * 모든 보상 요청 이력 조회 (관리자 및 감사자용)
+   * @param query 페이지네이션 및 필터링 옵션
+   * @returns 보상 요청 이력
    */
-  @Get('rewards/user/pending')
-  @ApiOperation({ summary: '사용자별 대기 중인 보상 조회' })
-  @ApiBearerAuth()
-  @ApiResponse({ status: 200, description: '대기 중인 보상 목록' })
-  @ApiResponse({ status: 401, description: '인증 실패' })
-  async getPendingRewards(@Request() req) {
-    this.logger.log(`Getting pending rewards for user: ${req.user.userId}`);
-
-    return firstValueFrom(this.eventClient.send('reward.getPendingRewards', req.user.userId));
-  }
-
-  /**
-   * 보상 지급 완료 처리
-   */
-  @Post('rewards/claim/:id')
-  @ApiOperation({ summary: '보상 지급 완료 처리' })
-  @ApiBearerAuth()
-  @ApiResponse({ status: 200, description: '보상 지급이 완료됨' })
-  @ApiResponse({ status: 400, description: '잘못된 요청' })
-  @ApiResponse({ status: 401, description: '인증 실패' })
-  @ApiResponse({ status: 404, description: '요청을 찾을 수 없음' })
-  @ApiResponse({ status: 409, description: '이미 처리된 요청' })
-  async claimReward(@Param('id') id: string, @Body() claimRewardDto: any, @Request() req) {
-    this.logger.log(`Claiming reward request: ${id}`);
-
-    return firstValueFrom(
-      this.eventClient.send('reward.claim', {
-        id,
-        dto: claimRewardDto,
-        userId: req.user.userId,
-      }),
-    );
-  }
-
-  /**
-   * 모든 보상 요청 조회 (관리자/운영자/감사자 전용)
-   */
-  @Get('rewards/admin/requests')
-  @ApiOperation({ summary: '모든 보상 요청 조회 (관리자/운영자/감사자 전용)' })
-  @ApiBearerAuth()
+  @Get('admin/reward-requests')
   @Roles(Role.ADMIN, Role.OPERATOR, Role.AUDITOR)
-  @ApiResponse({ status: 200, description: '보상 요청 목록' })
-  @ApiResponse({ status: 401, description: '인증 실패' })
-  @ApiResponse({ status: 403, description: '권한 없음' })
-  async getAllRequests(@Query() paginationDto: any, @Query('status') status?: string) {
-    this.logger.log('Getting all reward requests');
-
-    return firstValueFrom(
-      this.eventClient.send('reward.getAllRequests', {
-        dto: paginationDto,
-        status,
-      }),
-    );
+  @ApiOperation({
+    summary: '전체 보상 요청 이력',
+    description: '모든 사용자의 보상 요청 이력을 조회합니다.',
+  })
+  @ApiResponse({ status: 200, description: '보상 요청 이력이 성공적으로 조회되었습니다.' })
+  async getAllRewardRequests(@Query() query: any) {
+    return await firstValueFrom(this.eventClient.send('get_all_reward_requests', query));
   }
 
   /**
-   * 보상 요청 상태 업데이트 (관리자/운영자 전용)
+   * 보상 요청 승인 (관리자 및 운영자용)
+   * @param requestId 보상 요청 ID
+   * @returns 승인 결과
    */
-  @Patch('rewards/admin/request/:id')
-  @ApiOperation({ summary: '보상 요청 상태 업데이트 (관리자/운영자 전용)' })
-  @ApiBearerAuth()
+  @Put('admin/reward-requests/:requestId/approve')
   @Roles(Role.ADMIN, Role.OPERATOR)
-  @ApiResponse({ status: 200, description: '보상 요청 상태가 업데이트됨' })
-  @ApiResponse({ status: 401, description: '인증 실패' })
-  @ApiResponse({ status: 403, description: '권한 없음' })
-  @ApiResponse({ status: 404, description: '요청을 찾을 수 없음' })
-  async adminUpdateRequestStatus(
-    @Param('id') id: string,
-    @Body() updateStatusDto: any,
-    @Request() req,
-  ) {
-    this.logger.log(`Admin updating request status: ${id} to ${updateStatusDto.status}`);
-
-    return firstValueFrom(
-      this.eventClient.send('reward.adminUpdateRequestStatus', {
-        id,
-        dto: updateStatusDto,
-        userId: req.user.userId,
-      }),
-    );
+  @ApiOperation({
+    summary: '보상 요청 승인',
+    description: '사용자의 보상 요청을 승인합니다.',
+  })
+  @ApiResponse({ status: 200, description: '보상 요청이 성공적으로 승인되었습니다.' })
+  async approveRewardRequest(@Param('requestId') requestId: string) {
+    return await firstValueFrom(this.eventClient.send('approve_reward_request', { requestId }));
   }
 
   /**
-   * 사용자 이벤트 로그 발생
+   * 보상 요청 거부 (관리자 및 운영자용)
+   * @param requestId 보상 요청 ID
+   * @param rejectDto 거부 사유
+   * @returns 거부 결과
    */
-  @Post('log')
-  @ApiOperation({ summary: '사용자 이벤트 로그 발생' })
-  @ApiBearerAuth()
-  @ApiResponse({ status: 200, description: '이벤트 로그가 생성됨' })
-  @ApiResponse({ status: 400, description: '잘못된 입력' })
-  @ApiResponse({ status: 401, description: '인증 실패' })
-  async createEventLog(@Body() eventLogDto: any, @Request() req) {
-    this.logger.log(`Creating event log for user ${req.user.userId}: ${eventLogDto.eventType}`);
-
-    return firstValueFrom(
-      this.eventClient.send('event.log', {
-        userId: req.user.userId,
-        eventType: eventLogDto.eventType,
-        data: eventLogDto.data,
-        timestamp: eventLogDto.timestamp || new Date(),
-      }),
+  @Put('admin/reward-requests/:requestId/reject')
+  @Roles(Role.ADMIN, Role.OPERATOR)
+  @ApiOperation({
+    summary: '보상 요청 거부',
+    description: '사용자의 보상 요청을 거부합니다.',
+  })
+  @ApiResponse({ status: 200, description: '보상 요청이 성공적으로 거부되었습니다.' })
+  async rejectRewardRequest(@Param('requestId') requestId: string, @Body() rejectDto: any) {
+    return await firstValueFrom(
+      this.eventClient.send('reject_reward_request', { requestId, ...rejectDto }),
     );
   }
 }
