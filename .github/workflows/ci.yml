@@ -1,0 +1,122 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    services:
+      mongodb:
+        image: mongo:5.0
+        env:
+          MONGO_INITDB_ROOT_USERNAME: root
+          MONGO_INITDB_ROOT_PASSWORD: root123
+          MONGO_INITDB_DATABASE: reward-system-test
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd mongosh --quiet --eval "db.adminCommand('ping')"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
+        run: npm run build
+
+      - name: Run tests
+        run: npm test
+        env:
+          MONGODB_URI: mongodb://root:root123@localhost:27017/reward-system-test?authSource=admin
+          JWT_SECRET: test_secret_key
+          JWT_EXPIRATION: 1h
+          NODE_ENV: test
+
+      - name: Generate test coverage
+        run: npm run test:cov
+        env:
+          MONGODB_URI: mongodb://root:root123@localhost:27017/reward-system-test?authSource=admin
+          JWT_SECRET: test_secret_key
+          JWT_EXPIRATION: 1h
+          NODE_ENV: test
+
+      - name: Upload coverage reports
+        uses: codecov/codecov-action@v3
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+  docker-build:
+    needs: build-and-test
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Extract branch name
+        shell: bash
+        run: echo "BRANCH_NAME=${GITHUB_REF#refs/heads/}" >> $GITHUB_ENV
+
+      - name: Build and push Gateway
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          file: ./docker/gateway/Dockerfile
+          push: true
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/reward-gateway:${{ env.BRANCH_NAME }}
+            ${{ secrets.DOCKERHUB_USERNAME }}/reward-gateway:latest
+          cache-from: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/reward-gateway:buildcache
+          cache-to: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/reward-gateway:buildcache,mode=max
+
+      - name: Build and push Auth
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          file: ./docker/auth/Dockerfile
+          push: true
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/reward-auth:${{ env.BRANCH_NAME }}
+            ${{ secrets.DOCKERHUB_USERNAME }}/reward-auth:latest
+          cache-from: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/reward-auth:buildcache
+          cache-to: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/reward-auth:buildcache,mode=max
+
+      - name: Build and push Event
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          file: ./docker/event/Dockerfile
+          push: true
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/reward-event:${{ env.BRANCH_NAME }}
+            ${{ secrets.DOCKERHUB_USERNAME }}/reward-event:latest
+          cache-from: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/reward-event:buildcache
+          cache-to: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/reward-event:buildcache,mode=max
