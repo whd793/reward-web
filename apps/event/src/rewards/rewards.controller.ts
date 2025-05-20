@@ -1,4 +1,4 @@
-import { Controller, Logger } from '@nestjs/common';
+import { Controller, HttpException, HttpStatus, Logger } from '@nestjs/common';
 import { MessagePattern, Payload } from '@nestjs/microservices';
 import { RewardsService } from './rewards.service';
 import { CreateRewardDto } from '../dto/create-reward.dto';
@@ -142,21 +142,21 @@ export class RewardsController {
     }
   }
 
-  /**
-   * 보상 지급 완료 처리 (마이크로서비스 패턴)
-   */
-  @MessagePattern('reward.claim')
-  async claimUserReward(@Payload() payload: { id: string; dto: ClaimRewardDto; userId: string }) {
-    this.logger.log(`[Microservice] Claiming reward request: ${payload.id}`);
-    try {
-      const result = await this.rewardsService.claimReward(payload.id, payload.dto, payload.userId);
-      this.logger.log(`[Microservice] Reward claimed successfully`);
-      return result;
-    } catch (error) {
-      this.logger.error(`[Microservice] Error claiming reward: ${error.message}`, error.stack);
-      throw error;
-    }
-  }
+  // /**
+  //  * 보상 지급 완료 처리 (마이크로서비스 패턴)
+  //  */
+  // @MessagePattern('reward.claim')
+  // async claimUserReward(@Payload() payload: { id: string; dto: ClaimRewardDto; userId: string }) {
+  //   this.logger.log(`[Microservice] Claiming reward request: ${payload.id}`);
+  //   try {
+  //     const result = await this.rewardsService.claimReward(payload.id, payload.dto, payload.userId);
+  //     this.logger.log(`[Microservice] Reward claimed successfully`);
+  //     return result;
+  //   } catch (error) {
+  //     this.logger.error(`[Microservice] Error claiming reward: ${error.message}`, error.stack);
+  //     throw error;
+  //   }
+  // }
 
   /**
    * 모든 보상 요청 조회 (마이크로서비스 패턴)
@@ -200,6 +200,85 @@ export class RewardsController {
     } catch (error) {
       this.logger.error(
         `[Microservice] Error admin updating request status: ${error.message}`,
+        error.stack,
+      );
+      throw error;
+    }
+  }
+
+  // 추가 api .
+
+  /**
+   * 보상 요청 상태 조회 (마이크로서비스 패턴)
+   */
+  @MessagePattern('reward.getRequestStatus')
+  async getRequestStatus(@Payload() data: { requestId: string; userId: string }) {
+    this.logger.log(`[Microservice] Getting request status: ${data.requestId}`);
+    try {
+      const result = await this.rewardsService.getRequestStatus(data.requestId);
+      // Verify user has access to this request
+      if (result.userId.toString() !== data.userId) {
+        throw new HttpException('Access denied', HttpStatus.FORBIDDEN);
+      }
+      this.logger.log(`[Microservice] Request status retrieved successfully`);
+      return result;
+    } catch (error) {
+      this.logger.error(
+        `[Microservice] Error getting request status: ${error.message}`,
+        error.stack,
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * 보상 수령 (마이크로서비스 패턴) - Updated
+   */
+  @MessagePattern('reward.claim')
+  async claimUserReward(@Payload() payload: { requestId: string; userId: string }) {
+    this.logger.log(`[Microservice] User ${payload.userId} claiming reward: ${payload.requestId}`);
+    try {
+      // Create a default claim DTO
+      const claimDto = {
+        gameTransactionId: `tx_${Date.now()}_${payload.requestId}`,
+        message: 'Reward claimed via API',
+      };
+
+      const result = await this.rewardsService.claimReward(
+        payload.requestId,
+        claimDto,
+        payload.userId,
+      );
+      this.logger.log(`[Microservice] Reward claimed successfully`);
+      return result;
+    } catch (error) {
+      this.logger.error(`[Microservice] Error claiming reward: ${error.message}`, error.stack);
+      throw error;
+    }
+  }
+
+  /**
+   * 관리자 요청 상태 업데이트 (마이크로서비스 패턴)
+   */
+  @MessagePattern('reward.updateRequestStatus')
+  async updateRequestStatus(
+    @Payload() payload: { requestId: string; status: string; reason?: string; adminId: string },
+  ) {
+    this.logger.log(
+      `[Microservice] Admin ${payload.adminId} updating request ${payload.requestId} to ${payload.status}`,
+    );
+    try {
+      const result = await this.rewardsService.adminUpdateRequestStatus(
+        payload.requestId,
+        payload.status as RewardRequestStatus,
+        payload.reason || `Status updated to ${payload.status} by admin`,
+        payload.adminId,
+      );
+      this.logger.log(`[Microservice] Request status updated successfully`);
+      return result;
+    } catch (error) {
+      this.logger.error(
+        `[Microservice] Error updating request status: ${error.message}`,
         error.stack,
       );
       throw error;

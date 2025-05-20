@@ -57,130 +57,568 @@ docker-compose up -d
 http://localhost:3000/api/docs
 ```
 
-## api
+# 🔐 인증 API (Authentication APIs)
 
-**Event Management:**
+- `POST   /api/auth/login`  
+  사용자 로그인
+- `POST   /api/auth/register`  
+  사용자 회원가입
+- `GET    /api/auth/me`  
+  현재 사용자 정보 조회
 
-- - `POST /api/events` - Create event (Admin/Operator)
-- - `GET /api/events` - Get all events (Admin/Operator/Auditor)
-- - `GET /api/events/active` - Get active events (Public)
-- - `GET /api/events/:id` - Get event by ID
-- - `PATCH /api/events/:id/status` - Update event status
-- - `POST /api/events/:eventId/check-condition` - Check event condition
+# 🎯 이벤트 관리 API (Event Management APIs)
 
-**Reward Management:**
+- `POST   /api/events`  
+  이벤트 생성 (관리자/운영자)
+- `GET    /api/events`  
+  모든 이벤트 조회 (관리자/운영자/감사자)
+- `GET    /api/events/active`  
+  활성 이벤트 조회 (공개용)
+- `GET    /api/events/:id`  
+  이벤트 ID로 조회
+- `GET    /api/events/:id/status`  
+  이벤트 상태 조회
+- `PATCH  /api/events/:id/status`  
+  이벤트 상태 수정 (관리자/운영자)
+- `POST   /api/events/:eventId/check-condition`  
+  이벤트 조건 확인
+- `GET    /api/events/:id/rewards`  
+  이벤트 ID로 보상 목록 조회
 
-- - `POST /api/events/rewards` - Create reward
-- - `GET /api/events/rewards` - Get all rewards???
-- - `GET /api/events/:id/rewards` - Get rewards by event
-- - `GET /api/events/rewards/:rewardId` - Get reward by ID
-- - `POST /api/events/rewards/request` - Request reward
-- - `GET /api/events/rewards/request/:requestId` - Get request status
-- - `GET /api/events/rewards/user/requests` - Get user requests
-- - `GET /api/events/rewards/user/pending` - Get user pending rewards
-- - `POST /api/events/rewards/claim/:requestId` - Claim reward
+# 🎁 보상 관리 API (Reward Management APIs)
 
-**Admin Management:**
+- `POST   /api/events/rewards`  
+  보상 생성 (관리자/운영자)
+- `GET    /api/events/rewards`  
+  모든 보상 조회 (관리자/운영자/감사자)
+- `GET    /api/events/rewards/:rewardId`  
+  보상 ID로 조회
+- `POST   /api/events/rewards/request`  
+  보상 요청
+- `GET    /api/events/rewards/request/:requestId`  
+  보상 요청 상태 조회
+- `POST   /api/events/rewards/claim/:requestId`  
+  보상 수령
 
-- - `GET /api/events/rewards/admin/requests` - Get all requests
-- - `PATCH /api/events/rewards/admin/request/:requestId` - Update request status
+# 👤 사용자 보상 API (User Reward Management APIs)
 
-**Analytics & Logging:**
+- `GET    /api/events/rewards/user/requests`  
+  사용자 보상 요청 목록 조회
+- `GET    /api/events/rewards/user/pending`  
+  사용자 미수령 보상 조회
 
-- - `POST /api/events/log` - Create event log
-- - `GET /api/events/statistics/events` - Event statistics
-- - `GET /api/events/statistics/rewards` - Reward statistics
+# ⚙️ 관리자 API (Admin Management APIs)
 
-**Authentication:**
+- `GET    /api/events/rewards/admin/requests`  
+  전체 보상 요청 조회 (관리자/운영자/감사자)
+- `PATCH  /api/events/rewards/admin/request/:requestId`  
+  보상 요청 상태 변경 (관리자/운영자)
 
-- - `POST /api/auth/login` - Login
-- - `POST /api/auth/register` - Register
-- - `GET /api/auth/me` - Get current user
+# 📝 이벤트 로그 API (Event Logging APIs)
 
-## API 테스트 방법
+- `POST   /api/events/log`  
+  이벤트 로그 생성
+- `GET    /api/events/logs/user`  
+  사용자 이벤트 로그 조회
+- `GET    /api/events/logs`  
+  전체 이벤트 로그 조회 (관리자/운영자/감사자)
 
-### 1\. **Authentication**
+# 📊 분석 및 통계 API (Analytics & Statistics APIs)
 
-bash
+- `GET    /api/events/statistics/events`  
+  이벤트 통계 조회 (관리자/운영자/감사자)
+- `GET    /api/events/statistics/rewards`  
+  보상 통계 조회 (관리자/운영자/감사자)
+
+# 🏥 시스템 상태 API (Health & System APIs)
+
+- `GET    /api/events/health`  
+  헬스 체크 (공개용)
+
+# API 테스트 가이드 (한국어)
+
+## ** 초기설정**
 
 ```bash
-# Register new user
-curl -X POST "http://localhost:3000/api/auth/register" \
-  -H "Content-Type: application/json" \
-  -d '{"username": "testuser", "email": "test@example.com", "password": "password123"}'
-
-# Login
-curl -X POST "http://localhost:3000/api/auth/login" \
-  -H "Content-Type: application/json" \
-  -d '{"username": "admin", "password": "admin123"}'
-```
-
-### 2\. **Events API**
-
-bash
-
-```bash
-# Get JWT token first
-TOKEN=$(curl -s -X POST "http://localhost:3000/api/auth/login" \
+# Get admin token (most common token needed)
+ADMIN_TOKEN=$(curl -s -X POST "http://localhost:3000/api/auth/login" \
   -H "Content-Type: application/json" \
   -d '{"username": "admin", "password": "admin123"}' | jq -r .access_token)
 
-# Get all events (admin only)
-curl -X GET "http://localhost:3000/api/events" \
-  -H "Authorization: Bearer $TOKEN"
+echo "Admin Token: $ADMIN_TOKEN"
+```
 
-# Get active events (no auth required)
-curl -X GET "http://localhost:3000/api/events/active"
+---
 
-# Get specific event
-curl -X GET "http://localhost:3000/api/events/682ed0a8f5e1c7fc9a524574" \
-  -H "Authorization: Bearer $TOKEN"
+# ** Authentication APIs**
 
-# Create new event
-curl -X POST "http://localhost:3000/api/events" \
-  -H "Authorization: Bearer $TOKEN" \
+## **1. POST /api/auth/register**
+
+```bash
+# Create a new user
+curl -X POST "http://localhost:3000/api/auth/register" \
   -H "Content-Type: application/json" \
   -d '{
-    "name": "New Test Event",
-    "description": "Test event description",
+    "username": "testuser'$(date +%s)'",
+    "email": "testuser'$(date +%s)'@example.com",
+    "password": "password123"
+  }'
+
+# Expected: 201 with user object
+```
+
+## **2. POST /api/auth/login**
+
+```bash
+# Login with admin
+curl -X POST "http://localhost:3000/api/auth/login" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "username": "admin",
+    "password": "admin123"
+  }'
+
+# Login with regular user
+curl -X POST "http://localhost:3000/api/auth/login" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "username": "testuser",
+    "password": "password123"
+  }'
+
+# Expected: 201 with access_token and user info
+```
+
+## **3. GET /api/auth/me**
+
+```bash
+# Get current user info
+curl -X GET "http://localhost:3000/api/auth/me" \
+  -H "Authorization: Bearer $ADMIN_TOKEN"
+
+# Expected: 200 with user profile
+```
+
+---
+
+# ** Event Management APIs**
+
+## **4. POST /api/events**
+
+```bash
+# Create new event (Admin/Operator only)
+curl -X POST "http://localhost:3000/api/events" \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "API Test Event '$(date +%s)'",
+    "description": "Event created via API testing",
     "eventType": "DAILY_LOGIN",
     "condition": {"consecutiveDays": 3},
     "startDate": "2025-05-22T00:00:00.000Z",
-    "endDate": "2025-06-22T23:59:59.999Z"
+    "endDate": "2025-07-22T23:59:59.999Z",
+    "status": "ACTIVE",
+    "approvalType": "AUTO"
   }'
+
+# Expected: 201 with event object
 ```
 
-### 3\. **Rewards API**
-
-bash
+## **5. GET /api/events**
 
 ```bash
-# Get rewards for an event
-curl -X GET "http://localhost:3000/api/events/682ed0a8f5e1c7fc9a524574/rewards" \
-  -H "Authorization: Bearer $TOKEN"
+# Get all events (Admin/Operator/Auditor only)
+curl -X GET "http://localhost:3000/api/events" \
+  -H "Authorization: Bearer $ADMIN_TOKEN"
 
-# Create a reward
+# With pagination
+curl -X GET "http://localhost:3000/api/events?page=1&limit=5" \
+  -H "Authorization: Bearer $ADMIN_TOKEN"
+
+# Expected: 200 with paginated events
+```
+
+## **6. GET /api/events/active**
+
+```bash
+# Get active events (Public - no auth needed)
+curl -X GET "http://localhost:3000/api/events/active"
+
+# With pagination
+curl -X GET "http://localhost:3000/api/events/active?page=1&limit=3"
+
+# Expected: 200 with active events
+```
+
+## **7. GET /api/events/:id**
+
+```bash
+# Get specific event by ID (get ID from active events first)
+EVENT_ID=$(curl -s -X GET "http://localhost:3000/api/events/active" | jq -r '.data[0]._id')
+
+curl -X GET "http://localhost:3000/api/events/$EVENT_ID"
+
+# Expected: 200 with event details
+```
+
+## **8. GET /api/events/:id/status**
+
+```bash
+# Get event status
+curl -X GET "http://localhost:3000/api/events/$EVENT_ID/status" \
+  -H "Authorization: Bearer $ADMIN_TOKEN"
+
+# Expected: 200 with status info
+```
+
+## **9. PATCH /api/events/:id/status**
+
+```bash
+# Update event status (Admin/Operator only)
+curl -X PATCH "http://localhost:3000/api/events/$EVENT_ID/status" \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"status": "ACTIVE"}'
+
+# Test changing to INACTIVE
+curl -X PATCH "http://localhost:3000/api/events/$EVENT_ID/status" \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"status": "INACTIVE"}'
+
+# Expected: 200 with updated event
+```
+
+## **10. POST /api/events/:eventId/check-condition**
+
+```bash
+# Check if user meets event condition
+curl -X POST "http://localhost:3000/api/events/$EVENT_ID/check-condition" \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{}'
+
+# Expected: 200 with condition check result
+```
+
+## **11. GET /api/events/:id/rewards**
+
+```bash
+# Get rewards for specific event
+curl -X GET "http://localhost:3000/api/events/$EVENT_ID/rewards" \
+  -H "Authorization: Bearer $ADMIN_TOKEN"
+
+# Expected: 200 with rewards array
+```
+
+---
+
+# ** Reward Management APIs**
+
+## **12. POST /api/events/rewards**
+
+```bash
+# Create new reward (Admin/Operator only)
 curl -X POST "http://localhost:3000/api/events/rewards" \
-  -H "Authorization: Bearer $TOKEN" \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
-    "name": "Gold Coins",
-    "description": "500 gold coins reward",
+    "name": "API Test Gold Reward",
+    "description": "1000 gold coins for API testing",
     "type": "CURRENCY",
-    "value": 500,
+    "value": 1000,
     "quantity": 1,
-    "eventId": "682ed0a8f5e1c7fc9a524574"
+    "eventId": "'$EVENT_ID'"
   }'
 
+# Expected: 201 with reward object
+# Save the reward ID for later tests
+```
+
+## **13. GET /api/events/rewards**
+
+```bash
+# Get all rewards (Admin/Operator/Auditor only)
+curl -X GET "http://localhost:3000/api/events/rewards" \
+  -H "Authorization: Bearer $ADMIN_TOKEN"
+
+# With pagination
+curl -X GET "http://localhost:3000/api/events/rewards?page=1&limit=5" \
+  -H "Authorization: Bearer $ADMIN_TOKEN"
+
+# Expected: 200 with paginated rewards
+```
+
+## **14. GET /api/events/rewards/:rewardId**
+
+```bash
+# Get specific reward by ID (get ID from rewards list first)
+REWARD_ID=$(curl -s -X GET "http://localhost:3000/api/events/rewards" -H "Authorization: Bearer $ADMIN_TOKEN" | jq -r '.data[0]._id')
+
+curl -X GET "http://localhost:3000/api/events/rewards/$REWARD_ID" \
+  -H "Authorization: Bearer $ADMIN_TOKEN"
+
+# Expected: 200 with reward details
+```
+
+## **15. POST /api/events/rewards/request**
+
+```bash
 # Request a reward
 curl -X POST "http://localhost:3000/api/events/rewards/request" \
-  -H "Authorization: Bearer $TOKEN" \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
-    "eventId": "682ed0a8f5e1c7fc9a524574",
-    "rewardId": "REWARD_ID_HERE"
+    "eventId": "'$EVENT_ID'",
+    "rewardId": "'$REWARD_ID'"
   }'
+
+# Test duplicate request (should fail with 409)
+curl -X POST "http://localhost:3000/api/events/rewards/request" \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "eventId": "'$EVENT_ID'",
+    "rewardId": "'$REWARD_ID'"
+  }'
+
+# Expected: 201 first time, 409 second time
 ```
+
+## **16. GET /api/events/rewards/request/:requestId**
+
+```bash
+# Get reward request status (get request ID from previous step)
+REQUEST_ID="REPLACE_WITH_ACTUAL_REQUEST_ID"
+
+curl -X GET "http://localhost:3000/api/events/rewards/request/$REQUEST_ID" \
+  -H "Authorization: Bearer $ADMIN_TOKEN"
+
+# Expected: 200 with request details
+```
+
+## **17. POST /api/events/rewards/claim/:requestId**
+
+```bash
+# Claim a reward
+curl -X POST "http://localhost:3000/api/events/rewards/claim/$REQUEST_ID" \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "gameTransactionId": "tx_'$(date +%s)'",
+    "message": "Reward claimed via API test"
+  }'
+
+# Expected: 200 with claim confirmation
+```
+
+---
+
+# ** User Reward Management APIs**
+
+## **18. GET /api/events/rewards/user/requests**
+
+```bash
+# Get user's reward requests
+curl -X GET "http://localhost:3000/api/events/rewards/user/requests" \
+  -H "Authorization: Bearer $ADMIN_TOKEN"
+
+# With pagination and filters
+curl -X GET "http://localhost:3000/api/events/rewards/user/requests?page=1&limit=5" \
+  -H "Authorization: Bearer $ADMIN_TOKEN"
+
+# Expected: 200 with user's requests
+```
+
+## **19. GET /api/events/rewards/user/pending**
+
+```bash
+# Get user's pending rewards
+curl -X GET "http://localhost:3000/api/events/rewards/user/pending" \
+  -H "Authorization: Bearer $ADMIN_TOKEN"
+
+# Expected: 200 with pending rewards
+```
+
+---
+
+# ** Admin Management APIs**
+
+## **20. GET /api/events/rewards/admin/requests**
+
+```bash
+# Get all reward requests (Admin/Operator/Auditor only)
+curl -X GET "http://localhost:3000/api/events/rewards/admin/requests" \
+  -H "Authorization: Bearer $ADMIN_TOKEN"
+
+# Filter by status
+curl -X GET "http://localhost:3000/api/events/rewards/admin/requests?status=PENDING" \
+  -H "Authorization: Bearer $ADMIN_TOKEN"
+
+# With pagination
+curl -X GET "http://localhost:3000/api/events/rewards/admin/requests?page=1&limit=10" \
+  -H "Authorization: Bearer $ADMIN_TOKEN"
+
+# Expected: 200 with all requests
+```
+
+## **21. PATCH /api/events/rewards/admin/request/:requestId**
+
+```bash
+# Update request status (Admin/Operator only)
+curl -X PATCH "http://localhost:3000/api/events/rewards/admin/request/$REQUEST_ID" \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "status": "APPROVED",
+    "reason": "Request approved via API test"
+  }'
+
+# Test rejection
+curl -X PATCH "http://localhost:3000/api/events/rewards/admin/request/$REQUEST_ID" \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "status": "REJECTED",
+    "reason": "Does not meet criteria"
+  }'
+
+# Expected: 200 with updated request
+```
+
+---
+
+# ** Event Logging APIs**
+
+## **22. POST /api/events/log**
+
+```bash
+# Create daily login log
+curl -X POST "http://localhost:3000/api/events/log" \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "eventType": "DAILY_LOGIN",
+    "data": {
+      "loginDate": "2025-05-22T12:00:00.000Z",
+      "consecutiveDays": 3,
+      "deviceInfo": "API Test"
+    }
+  }'
+
+# Create quest completion log
+curl -X POST "http://localhost:3000/api/events/log" \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "eventType": "QUEST_COMPLETE",
+    "data": {
+      "questId": "quest_api_test",
+      "questName": "API Testing Quest",
+      "experience": 200,
+      "completedAt": "2025-05-22T12:00:00.000Z"
+    }
+  }'
+
+# Create level up log
+curl -X POST "http://localhost:3000/api/events/log" \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "eventType": "LEVEL_UP",
+    "data": {
+      "oldLevel": 9,
+      "newLevel": 10,
+      "experience": 5000,
+      "levelUpAt": "2025-05-22T12:00:00.000Z"
+    }
+  }'
+
+# Expected: 200 with success confirmation
+```
+
+## **23. GET /api/events/logs/user**
+
+```bash
+# Get user's event logs
+curl -X GET "http://localhost:3000/api/events/logs/user" \
+  -H "Authorization: Bearer $ADMIN_TOKEN"
+
+# With pagination
+curl -X GET "http://localhost:3000/api/events/logs/user?page=1&limit=5" \
+  -H "Authorization: Bearer $ADMIN_TOKEN"
+
+# Filter by event type
+curl -X GET "http://localhost:3000/api/events/logs/user?eventType=DAILY_LOGIN" \
+  -H "Authorization: Bearer $ADMIN_TOKEN"
+
+curl -X GET "http://localhost:3000/api/events/logs/user?eventType=QUEST_COMPLETE" \
+  -H "Authorization: Bearer $ADMIN_TOKEN"
+
+# Expected: 200 with paginated logs
+```
+
+## **24. GET /api/events/logs**
+
+```bash
+# Get all event logs (Admin/Operator/Auditor only)
+curl -X GET "http://localhost:3000/api/events/logs" \
+  -H "Authorization: Bearer $ADMIN_TOKEN"
+
+# Filter by event type
+curl -X GET "http://localhost:3000/api/events/logs?eventType=LEVEL_UP" \
+  -H "Authorization: Bearer $ADMIN_TOKEN"
+
+# Filter by user ID
+USER_ID="682ed0a8f5e1c7fc9a524570"  # Replace with actual user ID
+curl -X GET "http://localhost:3000/api/events/logs?userId=$USER_ID" \
+  -H "Authorization: Bearer $ADMIN_TOKEN"
+
+# Multiple filters with pagination
+curl -X GET "http://localhost:3000/api/events/logs?eventType=DAILY_LOGIN&page=1&limit=10" \
+  -H "Authorization: Bearer $ADMIN_TOKEN"
+
+# Expected: 200 with filtered logs
+```
+
+---
+
+# ** Analytics & Statistics APIs**
+
+## **25. GET /api/events/statistics/events**
+
+```bash
+# Get event statistics (Admin/Operator/Auditor only)
+curl -X GET "http://localhost:3000/api/events/statistics/events" \
+  -H "Authorization: Bearer $ADMIN_TOKEN"
+
+# Expected: 200 with event counts and stats
+```
+
+## **26. GET /api/events/statistics/rewards**
+
+```bash
+# Get reward statistics (Admin/Operator/Auditor only)
+curl -X GET "http://localhost:3000/api/events/statistics/rewards" \
+  -H "Authorization: Bearer $ADMIN_TOKEN"
+
+# Expected: 200 with reward stats
+```
+
+---
+
+# ** Health & System APIs**
+
+## **27. GET /api/events/health**
+
+```bash
+# Health check (Public - no auth needed)
+curl -X GET "http://localhost:3000/api/events/health"
+
+# Expected: 200 with health status
+```
+
+---
 
 ## 기본 계정
 
@@ -1341,4 +1779,337 @@ MongoDB는 모든 서비스의 데이터를 저장합니다:
   "quantity": 1,
   "eventId": "60a12d5b9f15e83b0c9d1234"
 }
+```
+
+다음은 Nexon 보상 시스템의 **이벤트 로그 API**를 `README.md`에 설명하는 한국어 버전입니다:
+
+---
+
+## 📝 이벤트 로그 API
+
+**이벤트 로그 API**는 Nexon 보상 시스템을 위한 중앙 집중형 로깅 엔드포인트입니다.
+외부 게임 클라이언트나 웹 애플리케이션에서 **일일 로그인, 퀘스트 완료, 레벨업, 친구 초대, 프로필 완료** 등의 사용자 이벤트를 서버에 기록하여 **보상 처리 및 활동 추적**을 가능하게 합니다.
+
+---
+
+### 📌 목적
+
+이 API는 **게임 클라이언트 또는 웹 사이트 등 외부 플랫폼**에서 발생하는 유저 활동을 Nexon 서버로 전송하여,
+보상 지급, 통계 분석, 유저 진행 상황 저장 등에 활용됩니다.
+
+---
+
+### 🔐 인증
+
+모든 요청에는 유효한 `Bearer` 토큰이 필요합니다.
+
+```http
+Authorization: Bearer YOUR_ACCESS_TOKEN
+Content-Type: application/json
+```
+
+---
+
+### 📤 엔드포인트
+
+```
+POST /api/events/log
+```
+
+---
+
+### 📦 요청 형식
+
+요청 바디는 다음 형식을 따라야 합니다:
+
+- `eventType`: (string) 이벤트 종류 (예: `DAILY_LOGIN`, `QUEST_COMPLETE` 등)
+- `data`: (object) 이벤트에 필요한 상세 데이터
+
+---
+
+### 📚 지원되는 이벤트 유형 및 예시
+
+```bash
+# Get JWT token first
+TOKEN=$(curl -s -X POST "http://localhost:3000/api/auth/login" \
+  -H "Content-Type: application/json" \
+  -d '{"username": "admin", "password": "admin123"}' | jq -r .access_token)
+```
+
+#### ✅ 일일 로그인 (DAILY_LOGIN)
+
+```bash
+curl -X POST http://localhost:3000/api/events/log \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "eventType": "DAILY_LOGIN",
+    "data": {
+      "loginDate": "2025-05-22T12:00:00.000Z",
+      "consecutiveDays": 3,
+      "deviceInfo": "Mobile App"
+    }
+  }'
+```
+
+#### 🗺️ 퀘스트 완료 (QUEST_COMPLETE)
+
+```bash
+curl -X POST http://localhost:3000/api/events/log \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "eventType": "QUEST_COMPLETE",
+    "data": {
+      "questId": "quest_123",
+      "questName": "First Adventure Quest",
+      "completedAt": "2025-05-22T12:00:00.000Z",
+      "experience": 100
+    }
+  }'
+```
+
+#### 🚀 레벨업 (LEVEL_UP)
+
+```bash
+curl -X POST http://localhost:3000/api/events/log \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "eventType": "LEVEL_UP",
+    "data": {
+      "oldLevel": 9,
+      "newLevel": 10,
+      "experience": 5000,
+      "levelUpAt": "2025-05-22T12:00:00.000Z"
+    }
+  }'
+```
+
+#### 👥 친구 초대 (INVITE_FRIENDS)
+
+```bash
+curl -X POST http://localhost:3000/api/events/log \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "eventType": "INVITE_FRIENDS",
+    "data": {
+      "invitedUserId": "user_456",
+      "invitedUsername": "friend123",
+      "invitedAt": "2025-05-22T12:00:00.000Z"
+    }
+  }'
+```
+
+#### 👤 프로필 완료 (PROFILE_COMPLETE)
+
+```bash
+curl -X POST http://localhost:3000/api/events/log \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "eventType": "PROFILE_COMPLETE",
+    "data": {
+      "completedFields": ["name", "birthdate", "address", "phoneNumber"],
+      "completedAt": "2025-05-22T12:00:00.000Z"
+    }
+  }'
+```
+
+다음은 요청하신 내용을 한국어로 번역하고 `.md` 마크다운 형식으로 구성한 문서입니다. `ADMIN_TOKEN`은 모두 `TOKEN`으로 변경되었습니다.
+
+---
+
+# 📘 이벤트 로깅 API 테스트 가이드
+
+## 1. 이벤트 로그 생성 (다양한 유형)
+
+### 🔑 토큰 발급
+
+````bash
+TOKEN=$(curl -s -X POST "http://localhost:3000/api/auth/login" \
+  -H "Content-Type: application/json" \
+  -d '{"username": "admin", "password": "admin123"}' | jq -r .access_token)
+
+
+### 🟦 일일 로그인 이벤트
+
+```bash
+curl -X POST "http://localhost:3000/api/events/log" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "eventType": "DAILY_LOGIN",
+    "data": {
+      "loginDate": "2025-05-22T08:00:00.000Z",
+      "consecutiveDays": 1,
+      "deviceInfo": "Web Browser",
+      "ipAddress": "192.168.1.100"
+    }
+  }'
+````
+
+### 🟩 퀘스트 완료 이벤트
+
+```bash
+curl -X POST "http://localhost:3000/api/events/log" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "eventType": "QUEST_COMPLETE",
+    "data": {
+      "questId": "quest_001",
+      "questName": "First Adventure",
+      "experience": 150,
+      "completedAt": "2025-05-22T09:30:00.000Z"
+    }
+  }'
+```
+
+### 🟨 레벨 업 이벤트
+
+```bash
+curl -X POST "http://localhost:3000/api/events/log" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "eventType": "LEVEL_UP",
+    "data": {
+      "oldLevel": 4,
+      "newLevel": 5,
+      "experience": 2500,
+      "skillPoints": 3,
+      "levelUpAt": "2025-05-22T10:15:00.000Z"
+    }
+  }'
+```
+
+### 🟥 친구 초대 이벤트
+
+```bash
+curl -X POST "http://localhost:3000/api/events/log" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "eventType": "INVITE_FRIENDS",
+    "data": {
+      "invitedUserId": "user_12345",
+      "invitedUsername": "friend_alice",
+      "inviteMethod": "email",
+      "invitedAt": "2025-05-22T11:00:00.000Z"
+    }
+  }'
+```
+
+### 🟪 프로필 완성 이벤트
+
+```bash
+curl -X POST "http://localhost:3000/api/events/log" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "eventType": "PROFILE_COMPLETE",
+    "data": {
+      "completedFields": ["name", "birthdate", "address", "phoneNumber"],
+      "profileCompleteness": 100,
+      "completedAt": "2025-05-22T12:00:00.000Z"
+    }
+  }'
+```
+
+---
+
+## 2. 사용자 이벤트 로그 조회
+
+### 🔍 기본 조회
+
+```bash
+curl -X GET "http://localhost:3000/api/events/logs/user" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+### 📄 페이지네이션 적용
+
+```bash
+curl -X GET "http://localhost:3000/api/events/logs/user?page=1&limit=5" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+### 🔎 이벤트 유형별 필터링
+
+```bash
+curl -X GET "http://localhost:3000/api/events/logs/user?eventType=DAILY_LOGIN" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+```bash
+curl -X GET "http://localhost:3000/api/events/logs/user?eventType=QUEST_COMPLETE" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+```bash
+curl -X GET "http://localhost:3000/api/events/logs/user?eventType=LEVEL_UP" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+### 📌 필터 + 페이지네이션 조합
+
+```bash
+curl -X GET "http://localhost:3000/api/events/logs/user?eventType=DAILY_LOGIN&page=1&limit=10" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+---
+
+## 3. 관리자: 전체 이벤트 로그 조회
+
+### 🧑‍💼 관리자 토큰 발급
+
+```bash
+TOKEN=$(curl -s -X POST "http://localhost:3000/api/auth/login" \
+  -H "Content-Type: application/json" \
+  -d '{"username": "admin", "password": "admin123"}' | jq -r .access_token)
+```
+
+### 📋 전체 이벤트 로그 조회
+
+```bash
+curl -X GET "http://localhost:3000/api/events/logs" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+### 📄 페이지네이션 적용
+
+```bash
+curl -X GET "http://localhost:3000/api/events/logs?page=1&limit=20" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+### 🎯 이벤트 유형별 필터링
+
+```bash
+curl -X GET "http://localhost:3000/api/events/logs?eventType=DAILY_LOGIN" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+```bash
+curl -X GET "http://localhost:3000/api/events/logs?eventType=QUEST_COMPLETE" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+### 🙍 특정 사용자 필터링
+
+```bash
+USER_ID="682ed0a8f5e1c7fc9a524570"
+
+curl -X GET "http://localhost:3000/api/events/logs?userId=$USER_ID" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+### 🧩 복합 필터링
+
+```bash
+curl -X GET "http://localhost:3000/api/events/logs?eventType=LEVEL_UP&userId=$USER_ID&page=1&limit=10" \
+  -H "Authorization: Bearer $TOKEN"
 ```

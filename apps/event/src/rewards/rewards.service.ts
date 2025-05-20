@@ -105,6 +105,67 @@ export class RewardsService {
     return reward;
   }
 
+  // /**
+  //  * 보상 요청
+  //  */
+  // async requestReward(
+  //   requestRewardDto: RequestRewardDto,
+  //   userId: string,
+  // ): Promise<RewardRequestDocument> {
+  //   this.logger.log(`User ${userId} requesting reward for event ${requestRewardDto.eventId}`);
+
+  //   const { eventId, rewardId, idempotencyKey } = requestRewardDto;
+
+  //   // 이벤트 및 보상 존재 여부 확인
+  //   const reward = await this.findById(rewardId);
+
+  //   // 보상이 해당 이벤트에 속하는지 확인
+  //   if (reward.eventId.toString() !== eventId) {
+  //     throw new BadRequestException('보상이 해당 이벤트에 속하지 않습니다.');
+  //   }
+
+  //   // 중복 요청 확인용 멱등성 키 생성
+  //   const requestKey =
+  //     idempotencyKey ||
+  //     IdempotencyUtil.generateKeyFromRequest(userId, 'reward_request', { eventId, rewardId });
+
+  //   // 중복 요청 확인
+  //   const existingRequest = await this.rewardRequestModel
+  //     .findOne({
+  //       userId,
+  //       eventId,
+  //       rewardId,
+  //       status: { $in: [RewardRequestStatus.PENDING, RewardRequestStatus.APPROVED] },
+  //     })
+  //     .exec();
+
+  //   if (existingRequest) {
+  //     throw new ConflictException('이미 처리 중이거나 승인된 보상 요청이 있습니다.');
+  //   }
+
+  //   // 새 보상 요청 생성
+  //   const rewardRequest = new this.rewardRequestModel({
+  //     userId,
+  //     eventId,
+  //     rewardId,
+  //     status: RewardRequestStatus.PENDING,
+  //     idempotencyKey: requestKey,
+  //   });
+
+  //   // 보상 요청 저장 및 처리 시작
+  //   const savedRequest = await rewardRequest.save();
+
+  //   // 백그라운드에서 보상 처리
+  //   await this.inngestClient.sendRewardProcessEvent(
+  //     savedRequest._id.toString(),
+  //     userId,
+  //     eventId,
+  //     rewardId,
+  //   );
+
+  //   return savedRequest;
+  // }
+
   /**
    * 보상 요청
    */
@@ -152,16 +213,22 @@ export class RewardsService {
       idempotencyKey: requestKey,
     });
 
-    // 보상 요청 저장 및 처리 시작
+    // 보상 요청 저장
     const savedRequest = await rewardRequest.save();
 
-    // 백그라운드에서 보상 처리
-    await this.inngestClient.sendRewardProcessEvent(
-      savedRequest._id.toString(),
-      userId,
-      eventId,
-      rewardId,
-    );
+    // 백그라운드에서 보상 처리 (실패해도 요청은 성공으로 처리)
+    try {
+      await this.inngestClient.sendRewardProcessEvent(
+        savedRequest._id.toString(),
+        userId,
+        eventId,
+        rewardId,
+      );
+      this.logger.log(`Background processing initiated for request: ${savedRequest._id}`);
+    } catch (error) {
+      this.logger.warn(`Failed to initiate background processing: ${error.message}`);
+      // 백그라운드 처리 실패는 요청 자체를 실패시키지 않음
+    }
 
     return savedRequest;
   }
